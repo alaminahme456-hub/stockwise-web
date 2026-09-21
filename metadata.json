@@ -1,0 +1,6 @@
+{
+  "name": "ALTECH StockWise",
+  "description": "Production-ready inventory, sales, POS, and multi-store business management system powered by Supabase.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

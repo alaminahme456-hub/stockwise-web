@@ -2,40 +2,28 @@ import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useStore } from '../context/StoreContext';
 import { 
-  Store as StoreIcon, 
-  ChevronDown, 
-  Plus, 
-  Search, 
+  Building2, 
   LogOut, 
-  User as UserIcon, 
-  Menu, 
-  Wifi, 
-  WifiOff, 
-  Check,
-  Building2,
-  Sparkles,
-  ShieldCheck,
-  UserCheck,
-  CreditCard,
-  RotateCcw
+  ChevronDown, 
+  Check, 
+  Sparkles, 
+  ShieldCheck, 
+  UserCheck, 
+  CreditCard, 
+  RotateCcw,
+  Settings
 } from 'lucide-react';
-import { Store } from '../types';
+import { NavigationTab } from '../types';
 import { resetDemoData } from '../lib/demoData';
 
 interface NavbarProps {
-  onOpenMobileMenu: () => void;
-  onOpenSearch: () => void;
-  onOpenCreateStore: () => void;
+  onNavigate?: (tab: NavigationTab) => void;
 }
 
-export const Navbar: React.FC<NavbarProps> = ({
-  onOpenMobileMenu,
-  onOpenSearch,
-  onOpenCreateStore,
-}) => {
+export const Navbar: React.FC<NavbarProps> = ({ onNavigate }) => {
   const { user, profile, signOut, isDemo, loginWithDemo, exitDemo } = useAuth();
-  const { currentStore, stores, setCurrentStore, isRealtimeConnected, currentMemberRole, refreshStoreData, refreshStores } = useStore();
-  const [storeDropdownOpen, setStoreDropdownOpen] = useState(false);
+  const { currentStore, isRealtimeConnected, currentMemberRole, refreshStoreData, refreshStores } = useStore();
+  
   const [userDropdownOpen, setUserDropdownOpen] = useState(false);
   const [roleDropdownOpen, setRoleDropdownOpen] = useState(false);
 
@@ -53,103 +41,48 @@ export const Navbar: React.FC<NavbarProps> = ({
     }
   };
 
+  const userInitials = profile?.full_name 
+    ? profile.full_name.charAt(0).toUpperCase() 
+    : user?.email?.charAt(0).toUpperCase() || 'U';
+
   return (
     <header className="h-16 bg-white border-b border-slate-200 sticky top-0 z-30 px-4 lg:px-8 flex items-center justify-between shadow-xs">
-      {/* Left: Mobile Menu Trigger + Brand / Current Store Selector */}
+      {/* Position the StockWise branding at the top */}
       <div className="flex items-center gap-3">
-        <button
-          type="button"
-          id="btn-mobile-menu"
-          onClick={onOpenMobileMenu}
-          className="lg:hidden p-2 rounded-lg text-slate-600 hover:bg-slate-100"
-          aria-label="Open menu"
-        >
-          <Menu className="w-5 h-5" />
-        </button>
-
-        {/* Store Selector Dropdown */}
-        <div className="relative">
-          <button
-            type="button"
-            id="store-selector-button"
-            onClick={() => {
-              setStoreDropdownOpen(!storeDropdownOpen);
-              setUserDropdownOpen(false);
-              setRoleDropdownOpen(false);
-            }}
-            className="flex items-center gap-2.5 px-3 py-1.5 rounded-lg border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-800 transition text-sm font-medium"
-          >
-            <div className="w-7 h-7 rounded-md bg-blue-600 text-white flex items-center justify-center shrink-0 shadow-xs">
-              <StoreIcon className="w-4 h-4" />
-            </div>
-            <div className="text-left hidden sm:block">
-              <div className="text-xs text-slate-500 leading-none">Active Store</div>
-              <div className="text-sm font-semibold text-slate-900 leading-tight max-w-[140px] truncate">
-                {currentStore ? currentStore.name : 'Select Store'}
-              </div>
-            </div>
-            <ChevronDown className="w-4 h-4 text-slate-500" />
-          </button>
-
-          {storeDropdownOpen && (
-            <>
-              <div 
-                className="fixed inset-0 z-40" 
-                onClick={() => setStoreDropdownOpen(false)} 
-              />
-              <div className="absolute left-0 mt-2 w-64 bg-white rounded-xl shadow-xl border border-slate-200 py-1.5 z-50 animate-in fade-in zoom-in-95 duration-100">
-                <div className="px-3 py-2 border-b border-slate-100">
-                  <div className="text-xs font-semibold uppercase tracking-wider text-slate-400">
-                    Your Stores ({stores.length})
-                  </div>
-                </div>
-
-                <div className="max-h-56 overflow-y-auto py-1">
-                  {stores.map((s: Store) => {
-                    const isSelected = currentStore?.id === s.id;
-                    return (
-                      <button
-                        key={s.id}
-                        type="button"
-                        onClick={() => {
-                          setCurrentStore(s);
-                          setStoreDropdownOpen(false);
-                        }}
-                        className={`w-full px-3 py-2 text-left flex items-center justify-between text-sm transition ${
-                          isSelected ? 'bg-blue-50 text-blue-700 font-medium' : 'text-slate-700 hover:bg-slate-50'
-                        }`}
-                      >
-                        <div className="flex items-center gap-2 truncate">
-                          <Building2 className={`w-4 h-4 ${isSelected ? 'text-blue-600' : 'text-slate-400'}`} />
-                          <span className="truncate">{s.name}</span>
-                        </div>
-                        {isSelected && <Check className="w-4 h-4 text-blue-600 shrink-0" />}
-                      </button>
-                    );
-                  })}
-                </div>
-
-                <div className="border-t border-slate-100 pt-1 mt-1">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setStoreDropdownOpen(false);
-                      onOpenCreateStore();
-                    }}
-                    className="w-full px-3 py-2 text-left text-sm text-blue-600 hover:bg-blue-50 font-medium flex items-center gap-2"
-                  >
-                    <Plus className="w-4 h-4" />
-                    <span>Create New Store</span>
-                  </button>
-                </div>
-              </div>
-            </>
-          )}
+        <div className="w-9 h-9 rounded-xl bg-blue-600 text-white flex items-center justify-center font-black text-base shadow-sm shadow-blue-500/20">
+          SW
+        </div>
+        <div>
+          <div className="text-lg font-black text-slate-900 tracking-tight leading-none flex items-center gap-2">
+            <span>StockWise</span>
+          </div>
+          <div className="text-[11px] text-slate-500 font-medium mt-0.5 hidden sm:block">
+            Cloud Retail Management &amp; POS
+          </div>
         </div>
       </div>
 
-      {/* Right Actions: Demo Switcher, Real-time status, Quick Search, User Profile */}
-      <div className="flex items-center gap-2 sm:gap-3">
+      {/* Right Actions: Active Store indicator, Demo Role Switcher, Realtime status, User Profile */}
+      <div className="flex items-center gap-2.5 sm:gap-3">
+        {/* Active Store Display with link to Settings */}
+        <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-700">
+          <Building2 className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+          <span className="text-slate-400 hidden xs:inline">Store:</span>
+          <span className="font-semibold text-slate-800 max-w-[120px] sm:max-w-[160px] truncate">
+            {currentStore?.name || 'Select Store'}
+          </span>
+          {onNavigate && (
+            <button
+              type="button"
+              onClick={() => onNavigate('settings')}
+              className="text-blue-600 hover:text-blue-700 font-semibold text-[11px] hover:underline ml-0.5 cursor-pointer"
+              title="Switch store in Settings"
+            >
+              Switch
+            </button>
+          )}
+        </div>
+
         {/* Demo Mode Role Switcher */}
         {isDemo && (
           <div className="relative">
@@ -159,12 +92,12 @@ export const Navbar: React.FC<NavbarProps> = ({
               onClick={() => {
                 setRoleDropdownOpen(!roleDropdownOpen);
                 setUserDropdownOpen(false);
-                setStoreDropdownOpen(false);
               }}
-              className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-50 text-amber-900 border border-amber-300 hover:bg-amber-100 transition shadow-xs"
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-50 text-amber-900 border border-amber-300 hover:bg-amber-100 transition shadow-xs cursor-pointer"
             >
               <Sparkles className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-              <span>Demo: {currentMemberRole.toUpperCase()}</span>
+              <span className="hidden sm:inline">Role: {currentMemberRole.toUpperCase()}</span>
+              <span className="sm:hidden">{currentMemberRole.toUpperCase()}</span>
               <ChevronDown className="w-3 h-3 text-amber-700" />
             </button>
 
@@ -180,7 +113,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                   <button
                     type="button"
                     onClick={() => handleSwitchDemoRole('owner')}
-                    className={`w-full px-3 py-2 text-left text-xs flex items-center justify-between hover:bg-slate-50 transition ${
+                    className={`w-full px-3 py-2 text-left text-xs flex items-center justify-between hover:bg-slate-50 transition cursor-pointer ${
                       currentMemberRole === 'owner' ? 'font-semibold text-blue-600 bg-blue-50/50' : 'text-slate-700'
                     }`}
                   >
@@ -194,7 +127,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                   <button
                     type="button"
                     onClick={() => handleSwitchDemoRole('manager')}
-                    className={`w-full px-3 py-2 text-left text-xs flex items-center justify-between hover:bg-slate-50 transition ${
+                    className={`w-full px-3 py-2 text-left text-xs flex items-center justify-between hover:bg-slate-50 transition cursor-pointer ${
                       currentMemberRole === 'manager' ? 'font-semibold text-indigo-600 bg-indigo-50/50' : 'text-slate-700'
                     }`}
                   >
@@ -208,7 +141,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                   <button
                     type="button"
                     onClick={() => handleSwitchDemoRole('cashier')}
-                    className={`w-full px-3 py-2 text-left text-xs flex items-center justify-between hover:bg-slate-50 transition ${
+                    className={`w-full px-3 py-2 text-left text-xs flex items-center justify-between hover:bg-slate-50 transition cursor-pointer ${
                       currentMemberRole === 'cashier' ? 'font-semibold text-emerald-600 bg-emerald-50/50' : 'text-slate-700'
                     }`}
                   >
@@ -223,7 +156,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                     <button
                       type="button"
                       onClick={handleResetData}
-                      className="w-full px-3 py-1.5 text-left text-xs text-slate-600 hover:bg-slate-50 flex items-center gap-2 transition"
+                      className="w-full px-3 py-1.5 text-left text-xs text-slate-600 hover:bg-slate-50 flex items-center gap-2 transition cursor-pointer"
                     >
                       <RotateCcw className="w-3.5 h-3.5 text-slate-400" />
                       <span>Reset Demo Data</span>
@@ -234,7 +167,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                         setRoleDropdownOpen(false);
                         exitDemo();
                       }}
-                      className="w-full px-3 py-1.5 text-left text-xs text-red-600 hover:bg-red-50 flex items-center gap-2 transition"
+                      className="w-full px-3 py-1.5 text-left text-xs text-red-600 hover:bg-red-50 flex items-center gap-2 transition cursor-pointer"
                     >
                       <LogOut className="w-3.5 h-3.5" />
                       <span>Exit Demo to Sign In</span>
@@ -264,20 +197,6 @@ export const Navbar: React.FC<NavbarProps> = ({
           )}
         </div>
 
-        {/* Global Search Button */}
-        <button
-          type="button"
-          id="btn-global-search"
-          onClick={onOpenSearch}
-          className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-slate-200 bg-slate-50 text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition text-sm"
-        >
-          <Search className="w-4 h-4" />
-          <span className="hidden sm:inline">Search...</span>
-          <kbd className="hidden sm:inline-block px-1.5 py-0.5 text-[10px] font-semibold bg-white border border-slate-200 rounded text-slate-400">
-            ⌘K
-          </kbd>
-        </button>
-
         {/* User Profile dropdown */}
         <div className="relative">
           <button
@@ -285,13 +204,12 @@ export const Navbar: React.FC<NavbarProps> = ({
             id="user-profile-button"
             onClick={() => {
               setUserDropdownOpen(!userDropdownOpen);
-              setStoreDropdownOpen(false);
               setRoleDropdownOpen(false);
             }}
-            className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-slate-100 transition text-slate-700"
+            className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-slate-100 transition text-slate-700 cursor-pointer"
           >
             <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center font-bold text-sm">
-              {profile?.full_name ? profile.full_name.charAt(0).toUpperCase() : user?.email?.charAt(0).toUpperCase() || 'U'}
+              {userInitials}
             </div>
             <span className="hidden md:inline text-sm font-medium text-slate-700 max-w-[120px] truncate">
               {profile?.full_name || user?.email?.split('@')[0]}
@@ -302,23 +220,46 @@ export const Navbar: React.FC<NavbarProps> = ({
           {userDropdownOpen && (
             <>
               <div className="fixed inset-0 z-40" onClick={() => setUserDropdownOpen(false)} />
-              <div className="absolute right-0 mt-2 w-56 bg-white rounded-xl shadow-xl border border-slate-200 py-1 z-50 animate-in fade-in zoom-in-95 duration-100">
+              <div className="absolute right-0 mt-2 w-60 bg-white rounded-xl shadow-xl border border-slate-200 py-1.5 z-50 animate-in fade-in zoom-in-95 duration-100">
                 <div className="px-4 py-2.5 border-b border-slate-100">
                   <p className="text-xs text-slate-500">Signed in as</p>
                   <p className="text-sm font-semibold text-slate-900 truncate">{user?.email}</p>
+                  {currentStore && (
+                    <div className="mt-1 text-xs text-slate-600 flex items-center justify-between">
+                      <span className="text-slate-400">Store:</span>
+                      <span className="font-semibold text-slate-800 truncate max-w-[130px]">{currentStore.name}</span>
+                    </div>
+                  )}
                   {isDemo && (
-                    <span className="inline-block mt-1 text-[10px] px-2 py-0.5 bg-amber-100 text-amber-800 rounded font-medium">
+                    <span className="inline-block mt-1.5 text-[10px] px-2 py-0.5 bg-amber-100 text-amber-800 rounded font-medium">
                       Demo Account ({currentMemberRole})
                     </span>
                   )}
                 </div>
+
+                {onNavigate && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setUserDropdownOpen(false);
+                      onNavigate('settings');
+                    }}
+                    className="w-full px-4 py-2 text-left text-xs text-slate-700 hover:bg-slate-50 flex items-center gap-2 transition cursor-pointer"
+                  >
+                    <Settings className="w-4 h-4 text-slate-400" />
+                    <span>Manage &amp; Switch Stores</span>
+                  </button>
+                )}
+
+                <div className="border-t border-slate-100 my-1" />
+
                 <button
                   type="button"
                   onClick={() => {
                     setUserDropdownOpen(false);
                     signOut();
                   }}
-                  className="w-full px-4 py-2 text-left text-sm text-red-600 hover:bg-red-50 flex items-center gap-2 transition"
+                  className="w-full px-4 py-2 text-left text-sm text-red-600 hover:bg-red-50 flex items-center gap-2 transition cursor-pointer"
                 >
                   <LogOut className="w-4 h-4" />
                   <span>{isDemo ? 'Exit Demo Mode' : 'Sign out'}</span>

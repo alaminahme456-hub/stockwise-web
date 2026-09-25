@@ -200,11 +200,7 @@ const MainAppLayout: React.FC = () => {
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* Top Navbar */}
-        <Navbar
-          onOpenMobileMenu={() => setMobileMenuOpen(true)}
-          onOpenSearch={() => setSearchOpen(true)}
-          onOpenCreateStore={() => setCreateStoreOpen(true)}
-        />
+        <Navbar onNavigate={(tab) => setCurrentTab(tab)} />
 
         {/* View Routing */}
         <main className="flex-1 p-4 lg:p-8 max-w-7xl w-full mx-auto pb-24 lg:pb-8">

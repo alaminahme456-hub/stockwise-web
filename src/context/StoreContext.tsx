@@ -9,7 +9,7 @@ import {
   Customer, 
   Supplier, 
   Category, 
-  StoreSettings,
+  StoreSettings, 
   StoreMember,
   Role
 } from '../types';
@@ -29,7 +29,6 @@ import {
   saveStoreSettings as apiSaveSettings
 } from '../lib/db';
 import { supabase } from '../lib/supabase';
-import { getActiveDemoAccount } from '../lib/demoData';
 
 interface StoreContextType {
   currentStore: Store | null;
@@ -54,13 +53,12 @@ interface StoreContextType {
   updateCurrentStore: (updates: Partial<Store>) => Promise<void>;
   updateSettings: (newSettings: Partial<StoreSettings>) => Promise<void>;
   isRealtimeConnected: boolean;
-  isDemo: boolean;
 }
 
 const StoreContext = createContext<StoreContextType | undefined>(undefined);
 
 export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { user, isConfigured, isDemo } = useAuth();
+  const { user, isConfigured } = useAuth();
   const [stores, setStores] = useState<Store[]>([]);
   const [currentStore, setCurrentStoreState] = useState<Store | null>(null);
   const [loadingStores, setLoadingStores] = useState(true);
@@ -80,19 +78,15 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   // Current user's role in the active store
   const currentMemberRole: Role = (() => {
-    if (isDemo) {
-      const demoAccount = getActiveDemoAccount();
-      if (demoAccount) return demoAccount.role as Role;
-    }
-    if (!currentStore || !user) return 'cashier';
+    if (!currentStore || !user) return 'owner';
     if (currentStore.owner_id === user.id) return 'owner';
     const found = members.find((m) => m.user_id === user.id);
-    return found?.role || 'cashier';
+    return found?.role || 'owner';
   })();
 
   // 1. Fetch user's stores
   const refreshStores = useCallback(async () => {
-    if (!user || (!isConfigured && !isDemo)) {
+    if (!user || !isConfigured) {
       setStores([]);
       setCurrentStoreState(null);
       setLoadingStores(false);
@@ -120,7 +114,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     } finally {
       setLoadingStores(false);
     }
-  }, [user, isConfigured, isDemo]);
+  }, [user, isConfigured]);
 
   useEffect(() => {
     refreshStores();
@@ -136,7 +130,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   // 2. Fetch all data for the currently selected store
   const refreshStoreData = useCallback(async () => {
-    if (!currentStore || (!isConfigured && !isDemo)) {
+    if (!currentStore || !isConfigured) {
       setProducts([]);
       setInventoryMovements([]);
       setSales([]);
@@ -187,7 +181,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     } finally {
       setLoadingData(false);
     }
-  }, [currentStore, isConfigured, isDemo]);
+  }, [currentStore, isConfigured]);
 
   useEffect(() => {
     refreshStoreData();
@@ -195,10 +189,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   // 3. Supabase Real-time subscriptions for cross-device live sync
   useEffect(() => {
-    if (!currentStore || !isConfigured || isDemo) {
-      if (isDemo) {
-        setIsRealtimeConnected(true);
-      }
+    if (!currentStore || !isConfigured) {
       return;
     }
 
@@ -264,7 +255,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       supabase.removeChannel(channel);
       setIsRealtimeConnected(false);
     };
-  }, [currentStore, isConfigured, isDemo]);
+  }, [currentStore, isConfigured]);
 
   const createNewStore = async (name: string, currency: string = 'USD', details?: Partial<Store>): Promise<Store> => {
     if (!user) throw new Error('Not authenticated');
@@ -312,7 +303,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         updateCurrentStore,
         updateSettings,
         isRealtimeConnected,
-        isDemo,
       }}
     >
       {children}

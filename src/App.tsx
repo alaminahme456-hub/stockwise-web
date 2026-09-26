@@ -203,7 +203,7 @@ const MainAppLayout: React.FC = () => {
         <Navbar onNavigate={(tab) => setCurrentTab(tab)} />
 
         {/* View Routing */}
-        <main className="flex-1 p-4 lg:p-8 max-w-7xl w-full mx-auto pb-24 lg:pb-8">
+        <main className="flex-1 p-3.5 sm:p-4 lg:p-8 max-w-7xl w-full mx-auto pb-28 sm:pb-32">
           {currentTab === 'dashboard' && (
             <DashboardView onNavigate={(tab) => setCurrentTab(tab as NavigationTab)} />
           )}

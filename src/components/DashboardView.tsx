@@ -43,7 +43,7 @@ interface DashboardViewProps {
 
 export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onViewSaleDetail }) => {
   const { currentStore, sales, products, customers, expenses, loadingData, stores, setCurrentStore } = useStore();
-  const { user, profile, signOut, isDemo, loginWithDemo } = useAuth();
+  const { user, profile, signOut } = useAuth();
 
   const [dateRange, setDateRange] = useState<DateRangeFilter>('month');
   const [subscriptionModalOpen, setSubscriptionModalOpen] = useState(false);

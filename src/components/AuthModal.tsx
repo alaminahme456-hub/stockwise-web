@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { getSupabaseCredentials, saveSupabaseCredentials } from '../lib/supabase';
-import { DEMO_ACCOUNTS } from '../lib/demoData';
 import { 
   Store, 
   Lock, 
@@ -10,15 +9,11 @@ import {
   AlertCircle, 
   Database, 
   CheckCircle, 
-  ArrowRight,
-  Sparkles,
-  ShieldCheck,
-  UserCheck,
-  CreditCard
+  ArrowRight
 } from 'lucide-react';
 
 export const AuthModal: React.FC = () => {
-  const { signIn, signUp, resetPassword, isConfigured, loginWithDemo } = useAuth();
+  const { signIn, signUp, resetPassword, isConfigured } = useAuth();
   const [mode, setMode] = useState<'login' | 'register' | 'forgot' | 'setup'>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -27,26 +22,10 @@ export const AuthModal: React.FC = () => {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
-  // Manual configuration inputs for live testing
+  // Connection settings state
   const initialCreds = getSupabaseCredentials();
   const [configUrl, setConfigUrl] = useState(initialCreds.url);
   const [configKey, setConfigKey] = useState(initialCreds.key);
-
-  const handleDemoLogin = (role: 'owner' | 'manager' | 'cashier') => {
-    setErrorMsg(null);
-    setLoading(true);
-    setTimeout(() => {
-      loginWithDemo(role);
-      setLoading(false);
-    }, 250);
-  };
-
-  const handlePrefillDemo = (role: 'owner' | 'manager' | 'cashier') => {
-    const account = DEMO_ACCOUNTS[role];
-    setEmail(account.email);
-    setPassword(account.password || 'demo123456');
-    setErrorMsg(null);
-  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -58,7 +37,11 @@ export const AuthModal: React.FC = () => {
       if (mode === 'login') {
         const { error } = await signIn(email, password);
         if (error) {
-          setErrorMsg(error.message || 'Failed to sign in. Please verify your email and password.');
+          if (error.code === 'email_not_confirmed' || error.message?.toLowerCase().includes('email not confirmed')) {
+            setErrorMsg('Email address has not been confirmed yet. Please click the confirmation link sent to your inbox by Supabase, or check your Supabase Auth settings.');
+          } else {
+            setErrorMsg(error.message || 'Failed to sign in. Please verify your email and password.');
+          }
         }
       } else if (mode === 'register') {
         if (password.length < 6) {
@@ -66,11 +49,14 @@ export const AuthModal: React.FC = () => {
           setLoading(false);
           return;
         }
-        const { error } = await signUp(email, password, fullName);
+        const { error, data } = await signUp(email, password, fullName);
         if (error) {
           setErrorMsg(error.message || 'Failed to create account.');
+        } else if (data?.session) {
+          setSuccessMsg('Account created successfully in Supabase! Logging you in...');
         } else {
-          setSuccessMsg('Account created successfully! Logging you in...');
+          setSuccessMsg('Account registered in Supabase! If confirmation is required, please check your inbox to confirm before signing in.');
+          setMode('login');
         }
       } else if (mode === 'forgot') {
         const { error } = await resetPassword(email);
@@ -113,68 +99,6 @@ export const AuthModal: React.FC = () => {
       <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
         <div className="bg-slate-800/95 backdrop-blur-sm border border-slate-700/80 py-7 px-6 shadow-2xl rounded-2xl sm:px-9 text-slate-200">
           
-          {/* Quick 1-Click Demo Login Banner */}
-          <div id="demo-login-card" className="mb-6 p-4 rounded-xl bg-gradient-to-br from-blue-950/60 to-indigo-950/60 border border-blue-500/30">
-            <div className="flex items-center justify-between gap-2 mb-2">
-              <div className="flex items-center gap-2 text-blue-300 text-xs font-semibold uppercase tracking-wider">
-                <Sparkles className="w-4 h-4 text-blue-400" />
-                <span>Instant Demo Login</span>
-              </div>
-              <span className="text-[11px] px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-300 font-medium">
-                No Setup Needed
-              </span>
-            </div>
-            <p className="text-xs text-slate-300 mb-3.5 leading-relaxed">
-              Explore ALTECH StockWise with full enterprise inventory, real POS checkout, receipts, and analytics:
-            </p>
-
-            <button
-              type="button"
-              id="btn-demo-owner"
-              onClick={() => handleDemoLogin('owner')}
-              disabled={loading}
-              className="w-full mb-2.5 py-2.5 px-3.5 rounded-lg bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white font-medium text-xs flex items-center justify-between shadow-md shadow-blue-600/20 transition group"
-            >
-              <div className="flex items-center gap-2">
-                <ShieldCheck className="w-4 h-4 text-blue-200" />
-                <span className="font-semibold">Demo as Store Owner (Full Access)</span>
-              </div>
-              <ArrowRight className="w-3.5 h-3.5 text-blue-200 group-hover:translate-x-0.5 transition-transform" />
-            </button>
-
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                id="btn-demo-manager"
-                onClick={() => handleDemoLogin('manager')}
-                disabled={loading}
-                className="py-1.5 px-2.5 rounded-lg bg-slate-800/90 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs font-medium flex items-center justify-center gap-1.5 transition"
-              >
-                <UserCheck className="w-3.5 h-3.5 text-indigo-400" />
-                <span>As Manager</span>
-              </button>
-              <button
-                type="button"
-                id="btn-demo-cashier"
-                onClick={() => handleDemoLogin('cashier')}
-                disabled={loading}
-                className="py-1.5 px-2.5 rounded-lg bg-slate-800/90 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs font-medium flex items-center justify-center gap-1.5 transition"
-              >
-                <CreditCard className="w-3.5 h-3.5 text-emerald-400" />
-                <span>As POS Cashier</span>
-              </button>
-            </div>
-          </div>
-
-          <div className="relative my-4 flex items-center justify-center">
-            <div className="absolute inset-0 flex items-center">
-              <div className="w-full border-t border-slate-700"></div>
-            </div>
-            <span className="relative px-3 bg-slate-800 text-[11px] uppercase tracking-wider text-slate-400 font-medium">
-              Or Sign In With Account
-            </span>
-          </div>
-
           {/* Navigation Pills between Login / Register */}
           {mode !== 'setup' && (
             <div className="flex border-b border-slate-700 mb-5 pb-1">
@@ -299,20 +223,9 @@ export const AuthModal: React.FC = () => {
               )}
 
               <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label className="block text-xs font-medium text-slate-300">
-                    Email Address
-                  </label>
-                  {mode === 'login' && (
-                    <button
-                      type="button"
-                      onClick={() => handlePrefillDemo('owner')}
-                      className="text-[11px] text-blue-400 hover:underline"
-                    >
-                      Fill Demo Credentials
-                    </button>
-                  )}
-                </div>
+                <label className="block text-xs font-medium text-slate-300 mb-1">
+                  Email Address
+                </label>
                 <div className="relative">
                   <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
                     <Mail className="w-4 h-4" />
@@ -320,7 +233,7 @@ export const AuthModal: React.FC = () => {
                   <input
                     type="email"
                     required
-                    placeholder="owner@demo.altech.com or your email"
+                    placeholder="name@company.com"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     className="w-full pl-10 pr-3 py-2.5 bg-slate-900 border border-slate-700 rounded-lg text-white text-sm placeholder-slate-500 focus:outline-none focus:border-blue-500 transition"
@@ -396,7 +309,7 @@ export const AuthModal: React.FC = () => {
           <div className="mt-6 pt-4 border-t border-slate-700/60 flex items-center justify-between text-xs text-slate-400">
             <div className="flex items-center gap-1.5">
               <div className={`w-2 h-2 rounded-full ${isConfigured ? 'bg-emerald-400' : 'bg-amber-400'}`} />
-              <span className="text-[11px]">{isConfigured ? 'Supabase Connected' : 'Supabase (Optional)'}</span>
+              <span className="text-[11px]">{isConfigured ? 'Supabase Connected' : 'Supabase Not Configured'}</span>
             </div>
             <button
               type="button"

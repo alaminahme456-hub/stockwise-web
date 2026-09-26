@@ -2,8 +2,8 @@
 -- ALTECH StockWise - Production Supabase PostgreSQL Schema with RLS & Realtime
 -- ==============================================================================
 
--- 1. Enable UUID Extension
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+-- 1. Enable UUID Extension (Optional on PG 13+)
+CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
 -- 2. Profiles Table (extends Supabase auth.users)
 CREATE TABLE IF NOT EXISTS public.profiles (
@@ -17,7 +17,7 @@ CREATE TABLE IF NOT EXISTS public.profiles (
 
 -- 3. Stores Table
 CREATE TABLE IF NOT EXISTS public.stores (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     owner_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
     name TEXT NOT NULL,
     business_name TEXT,
@@ -31,7 +31,7 @@ CREATE TABLE IF NOT EXISTS public.stores (
 
 -- 4. Store Members (Role Based Access: owner, manager, cashier)
 CREATE TABLE IF NOT EXISTS public.store_members (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     store_id UUID REFERENCES public.stores(id) ON DELETE CASCADE NOT NULL,
     user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
     role TEXT DEFAULT 'cashier' CHECK (role IN ('owner', 'manager', 'cashier')) NOT NULL,
@@ -41,7 +41,7 @@ CREATE TABLE IF NOT EXISTS public.store_members (
 
 -- 5. Categories Table
 CREATE TABLE IF NOT EXISTS public.categories (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     store_id UUID REFERENCES public.stores(id) ON DELETE CASCADE NOT NULL,
     name TEXT NOT NULL,
     description TEXT,
@@ -50,7 +50,7 @@ CREATE TABLE IF NOT EXISTS public.categories (
 
 -- 6. Suppliers Table
 CREATE TABLE IF NOT EXISTS public.suppliers (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     store_id UUID REFERENCES public.stores(id) ON DELETE CASCADE NOT NULL,
     name TEXT NOT NULL,
     contact_person TEXT,
@@ -63,7 +63,7 @@ CREATE TABLE IF NOT EXISTS public.suppliers (
 
 -- 7. Products Table
 CREATE TABLE IF NOT EXISTS public.products (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     store_id UUID REFERENCES public.stores(id) ON DELETE CASCADE NOT NULL,
     name TEXT NOT NULL,
     sku TEXT NOT NULL,
@@ -83,7 +83,7 @@ CREATE TABLE IF NOT EXISTS public.products (
 
 -- 8. Inventory Movements (Audit Log for all additions, reductions, and sales)
 CREATE TABLE IF NOT EXISTS public.inventory_movements (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     store_id UUID REFERENCES public.stores(id) ON DELETE CASCADE NOT NULL,
     product_id UUID REFERENCES public.products(id) ON DELETE CASCADE NOT NULL,
     type TEXT CHECK (type IN ('addition', 'reduction', 'sale', 'adjustment', 'initial')) NOT NULL,
@@ -97,7 +97,7 @@ CREATE TABLE IF NOT EXISTS public.inventory_movements (
 
 -- 9. Customers Table
 CREATE TABLE IF NOT EXISTS public.customers (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     store_id UUID REFERENCES public.stores(id) ON DELETE CASCADE NOT NULL,
     name TEXT NOT NULL,
     phone TEXT,
@@ -109,7 +109,7 @@ CREATE TABLE IF NOT EXISTS public.customers (
 
 -- 10. Sales Table
 CREATE TABLE IF NOT EXISTS public.sales (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     store_id UUID REFERENCES public.stores(id) ON DELETE CASCADE NOT NULL,
     customer_id UUID REFERENCES public.customers(id) ON DELETE SET NULL,
     customer_name TEXT,
@@ -126,7 +126,7 @@ CREATE TABLE IF NOT EXISTS public.sales (
 
 -- 11. Sale Items Table
 CREATE TABLE IF NOT EXISTS public.sale_items (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     sale_id UUID REFERENCES public.sales(id) ON DELETE CASCADE NOT NULL,
     product_id UUID REFERENCES public.products(id) ON DELETE SET NULL,
     product_name TEXT NOT NULL,
@@ -140,7 +140,7 @@ CREATE TABLE IF NOT EXISTS public.sale_items (
 
 -- 12. Expenses Table
 CREATE TABLE IF NOT EXISTS public.expenses (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     store_id UUID REFERENCES public.stores(id) ON DELETE CASCADE NOT NULL,
     title TEXT NOT NULL,
     category TEXT NOT NULL,
@@ -153,7 +153,7 @@ CREATE TABLE IF NOT EXISTS public.expenses (
 
 -- 13. Store Settings Table
 CREATE TABLE IF NOT EXISTS public.store_settings (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     store_id UUID REFERENCES public.stores(id) ON DELETE CASCADE UNIQUE NOT NULL,
     receipt_header TEXT DEFAULT 'ALTECH StockWise Store',
     receipt_footer TEXT DEFAULT 'Thank you for your patronage!',

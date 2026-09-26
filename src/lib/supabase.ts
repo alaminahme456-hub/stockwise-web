@@ -1,16 +1,24 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
-// Retrieve credentials from environment variables or custom connection store
+// Default configured Supabase project provided by user
+export const DEFAULT_SUPABASE_URL = 'https://kvofvaiqmjnvzcpphisr.supabase.co';
+export const DEFAULT_SUPABASE_ANON_KEY =
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt2b2Z2YWlxbWpudnpjcHBoaXNyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTAzNjUzODgsImV4cCI6MjEwNTk0MTM4OH0.9XKAJkhwZcIfszVhMTJZCyZxGO3fe_lrWu6VGmWfsXs';
+
+// Retrieve credentials from environment variables, custom connection store, or configured defaults
 export function getSupabaseCredentials(): { url: string; key: string } {
-  const envUrl = import.meta.env.VITE_SUPABASE_URL || '';
-  const envKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+  const envUrl = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_SUPABASE_URL) || '';
+  const envKey = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_SUPABASE_ANON_KEY) || '';
 
   const storedUrl = typeof window !== 'undefined' ? localStorage.getItem('stockwise_supabase_url') || '' : '';
   const storedKey = typeof window !== 'undefined' ? localStorage.getItem('stockwise_supabase_key') || '' : '';
 
+  const url = (envUrl || storedUrl || DEFAULT_SUPABASE_URL).trim();
+  const key = (envKey || storedKey || DEFAULT_SUPABASE_ANON_KEY).trim();
+
   return {
-    url: (envUrl || storedUrl).trim(),
-    key: (envKey || storedKey).trim(),
+    url,
+    key,
   };
 }
 

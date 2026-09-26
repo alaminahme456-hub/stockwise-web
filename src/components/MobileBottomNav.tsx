@@ -46,9 +46,9 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
     <nav 
       id="mobile-bottom-navigation" 
       aria-label="Bottom Navigation"
-      className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-t border-slate-200 shadow-lg px-2 py-1.5 pb-safe"
+      className="fixed bottom-0 left-0 right-0 lg:left-64 z-50 bg-white/95 backdrop-blur-md border-t border-slate-200 shadow-xl px-2 py-1 sm:py-1.5 pb-safe"
     >
-      <div className="flex items-center justify-around max-w-md mx-auto">
+      <div className="flex items-center justify-around max-w-lg mx-auto">
         {primaryMobileTabs.map((tab) => {
           const Icon = tab.icon;
           const isActive = currentTab === tab.id;
@@ -56,8 +56,9 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
             <button
               key={tab.id}
               type="button"
+              id={`bottom-nav-${tab.id}`}
               onClick={() => onSelectTab(tab.id)}
-              className={`flex-1 flex flex-col items-center justify-center py-1.5 px-1 rounded-xl transition relative active:scale-95 ${
+              className={`flex-1 flex flex-col items-center justify-center py-1 sm:py-1.5 px-1 rounded-xl transition relative active:scale-95 cursor-pointer ${
                 isActive 
                   ? 'text-blue-600 font-semibold' 
                   : 'text-slate-500 hover:text-slate-800'
@@ -82,8 +83,9 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
         {/* More button to toggle full drawer navigation */}
         <button
           type="button"
+          id="bottom-nav-more"
           onClick={onOpenMoreMenu}
-          className="flex-1 flex flex-col items-center justify-center py-1.5 px-1 rounded-xl text-slate-500 hover:text-slate-800 transition active:scale-95"
+          className="flex-1 flex flex-col items-center justify-center py-1 sm:py-1.5 px-1 rounded-xl text-slate-500 hover:text-slate-800 transition active:scale-95 cursor-pointer"
         >
           <MoreHorizontal className="w-5 h-5 stroke-[1.8px]" />
           <span className="text-[10px] mt-1 tracking-tight">More</span>

@@ -13,7 +13,7 @@ import {
 } from 'lucide-react';
 
 export const AuthModal: React.FC = () => {
-  const { signIn, signUp, resetPassword, isConfigured } = useAuth();
+  const { signIn, signUp, resetPassword } = useAuth();
   const [mode, setMode] = useState<'login' | 'register' | 'forgot' | 'setup'>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -304,23 +304,6 @@ export const AuthModal: React.FC = () => {
               )}
             </form>
           )}
-
-          {/* Database connection badge / helper */}
-          <div className="mt-6 pt-4 border-t border-slate-700/60 flex items-center justify-between text-xs text-slate-400">
-            <div className="flex items-center gap-1.5">
-              <div className={`w-2 h-2 rounded-full ${isConfigured ? 'bg-emerald-400' : 'bg-amber-400'}`} />
-              <span className="text-[11px]">{isConfigured ? 'Supabase Connected' : 'Supabase Not Configured'}</span>
-            </div>
-            <button
-              type="button"
-              id="btn-supabase-setup"
-              onClick={() => setMode('setup')}
-              className="text-blue-400 hover:text-blue-300 font-medium flex items-center gap-1 text-[11px]"
-            >
-              <Database className="w-3.5 h-3.5" />
-              <span>Connection Settings</span>
-            </button>
-          </div>
 
         </div>
       </div>

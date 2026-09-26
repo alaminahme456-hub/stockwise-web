@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { useStore } from '../context/StoreContext';
 import { useAuth } from '../context/AuthContext';
 import { Product } from '../types';
-import { createProduct, updateProduct, deleteProduct } from '../lib/db';
+import { createProduct, updateProduct, deleteProduct, createCategory } from '../lib/db';
 import { formatCurrency, formatDate } from '../lib/utils';
 import { 
   Plus, 
@@ -16,7 +16,9 @@ import {
   AlertTriangle, 
   Check, 
   X,
-  AlertCircle
+  AlertCircle,
+  Sparkles,
+  Loader2
 } from 'lucide-react';
 
 export const ProductsView: React.FC = () => {
@@ -35,20 +37,24 @@ export const ProductsView: React.FC = () => {
   const [viewingProduct, setViewingProduct] = useState<Product | null>(null);
   const [deletingProduct, setDeletingProduct] = useState<Product | null>(null);
 
-  // Form State for Add / Edit
+  // Form State for Add / Edit (using string representations for inputs to prevent sticky 0)
   const [formData, setFormData] = useState({
     name: '',
-    sku: '',
     category_id: '',
     description: '',
-    cost_price: 0,
-    selling_price: 0,
-    initial_stock: 0,
-    min_stock_level: 5,
+    cost_price: '',
+    selling_price: '',
+    initial_stock: '',
+    min_stock_level: '5',
     unit: 'pcs',
-    supplier_id: '',
     status: 'active' as 'active' | 'inactive' | 'archived',
   });
+
+  // Custom Category State
+  const [isCreatingCategory, setIsCreatingCategory] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState('');
+  const [categorySaveLoading, setCategorySaveLoading] = useState(false);
+  const [categorySaveError, setCategorySaveError] = useState<string | null>(null);
 
   const [formLoading, setFormLoading] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
@@ -98,21 +104,20 @@ export const ProductsView: React.FC = () => {
   }, [products, searchQuery, selectedCategory, selectedStockStatus, sortField, sortOrder]);
 
   const handleOpenAdd = () => {
-    // Generate simple auto SKU suggestion
-    const randomCode = Math.floor(1000 + Math.random() * 9000);
     setFormData({
       name: '',
-      sku: `SKU-${randomCode}`,
       category_id: categories.length > 0 ? categories[0].id : '',
       description: '',
-      cost_price: 0,
-      selling_price: 0,
-      initial_stock: 0,
-      min_stock_level: 5,
+      cost_price: '',
+      selling_price: '',
+      initial_stock: '',
+      min_stock_level: '5',
       unit: 'pcs',
-      supplier_id: suppliers.length > 0 ? suppliers[0].id : '',
       status: 'active',
     });
+    setIsCreatingCategory(false);
+    setNewCategoryName('');
+    setCategorySaveError(null);
     setFormError(null);
     setIsAddModalOpen(true);
   };
@@ -121,18 +126,65 @@ export const ProductsView: React.FC = () => {
     setEditingProduct(p);
     setFormData({
       name: p.name,
-      sku: p.sku,
       category_id: p.category_id || '',
       description: p.description || '',
-      cost_price: Number(p.cost_price),
-      selling_price: Number(p.selling_price),
-      initial_stock: Number(p.current_stock),
-      min_stock_level: Number(p.min_stock_level),
+      cost_price: p.cost_price ? String(Number(p.cost_price)) : '',
+      selling_price: p.selling_price ? String(Number(p.selling_price)) : '',
+      initial_stock: p.current_stock ? String(Number(p.current_stock)) : '',
+      min_stock_level: p.min_stock_level ? String(Number(p.min_stock_level)) : '5',
       unit: p.unit || 'pcs',
-      supplier_id: p.supplier_id || '',
       status: p.status || 'active',
     });
+    setIsCreatingCategory(false);
+    setNewCategoryName('');
+    setCategorySaveError(null);
     setFormError(null);
+  };
+
+  const handleCloseModal = () => {
+    setIsAddModalOpen(false);
+    setEditingProduct(null);
+    setIsCreatingCategory(false);
+    setNewCategoryName('');
+    setCategorySaveError(null);
+    setFormError(null);
+  };
+
+  const handleSaveCustomCategory = async () => {
+    const trimmed = newCategoryName.trim();
+    if (!trimmed) {
+      setCategorySaveError('Please enter a category name');
+      return;
+    }
+    if (!currentStore) {
+      setCategorySaveError('No active store found');
+      return;
+    }
+
+    // Check if category already exists (case-insensitive)
+    const existing = categories.find((c) => c.name.toLowerCase() === trimmed.toLowerCase());
+    if (existing) {
+      setFormData((prev) => ({ ...prev, category_id: existing.id }));
+      setIsCreatingCategory(false);
+      setNewCategoryName('');
+      setCategorySaveError(null);
+      return;
+    }
+
+    setCategorySaveLoading(true);
+    setCategorySaveError(null);
+
+    try {
+      const created = await createCategory(currentStore.id, trimmed);
+      await refreshStoreData();
+      setFormData((prev) => ({ ...prev, category_id: created.id }));
+      setIsCreatingCategory(false);
+      setNewCategoryName('');
+    } catch (err: any) {
+      setCategorySaveError(err?.message || 'Failed to save custom category');
+    } finally {
+      setCategorySaveLoading(false);
+    }
   };
 
   const handleSaveProduct = async (e: React.FormEvent) => {
@@ -143,20 +195,27 @@ export const ProductsView: React.FC = () => {
 
     try {
       const selectedCategoryObj = categories.find((c) => c.id === formData.category_id);
+      const costPriceNum = parseFloat(formData.cost_price) || 0;
+      const sellingPriceNum = parseFloat(formData.selling_price) || 0;
+      const initialStockNum = parseFloat(formData.initial_stock) || 0;
+      const minStockLevelNum = parseFloat(formData.min_stock_level) || 5;
+
+      // Generate a clean background SKU if none exists (satisfies schema constraint without requiring user input)
+      const generatedSku = `PRD-${Date.now().toString(36).toUpperCase()}-${Math.floor(100 + Math.random() * 900)}`;
 
       if (editingProduct) {
         // Update product
         await updateProduct(editingProduct.id, {
           name: formData.name,
-          sku: formData.sku,
+          sku: editingProduct.sku || generatedSku,
           category_id: formData.category_id || null,
           category_name: selectedCategoryObj?.name || null,
           description: formData.description || null,
-          cost_price: Number(formData.cost_price),
-          selling_price: Number(formData.selling_price),
-          min_stock_level: Number(formData.min_stock_level),
-          unit: formData.unit,
-          supplier_id: formData.supplier_id || null,
+          cost_price: costPriceNum,
+          selling_price: sellingPriceNum,
+          min_stock_level: minStockLevelNum,
+          unit: formData.unit || 'pcs',
+          supplier_id: editingProduct.supplier_id || null,
           status: formData.status,
         });
         setEditingProduct(null);
@@ -166,19 +225,19 @@ export const ProductsView: React.FC = () => {
           {
             store_id: currentStore.id,
             name: formData.name,
-            sku: formData.sku,
+            sku: generatedSku,
             category_id: formData.category_id || null,
             category_name: selectedCategoryObj?.name || null,
             description: formData.description || null,
-            cost_price: Number(formData.cost_price),
-            selling_price: Number(formData.selling_price),
-            current_stock: Number(formData.initial_stock),
-            min_stock_level: Number(formData.min_stock_level),
-            unit: formData.unit,
-            supplier_id: formData.supplier_id || null,
+            cost_price: costPriceNum,
+            selling_price: sellingPriceNum,
+            current_stock: initialStockNum,
+            min_stock_level: minStockLevelNum,
+            unit: formData.unit || 'pcs',
+            supplier_id: null,
             status: formData.status,
           },
-          Number(formData.initial_stock),
+          initialStockNum,
           user.id,
           user.email
         );
@@ -186,7 +245,7 @@ export const ProductsView: React.FC = () => {
       }
       await refreshStoreData();
     } catch (err: any) {
-      setFormError(err?.message || 'Failed to save product. Check database connection or unique SKU.');
+      setFormError(err?.message || 'Failed to save product. Check database connection.');
     } finally {
       setFormLoading(false);
     }
@@ -398,7 +457,7 @@ export const ProductsView: React.FC = () => {
               </h3>
               <button
                 type="button"
-                onClick={() => { setIsAddModalOpen(false); setEditingProduct(null); }}
+                onClick={handleCloseModal}
                 className="text-slate-400 hover:text-slate-600 p-1"
               >
                 <X className="w-5 h-5" />
@@ -413,83 +472,165 @@ export const ProductsView: React.FC = () => {
             )}
 
             <form onSubmit={handleSaveProduct} className="mt-4 space-y-4">
+              {/* Product Name */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Product Name *
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Arabica Coffee Beans"
+                  value={formData.name}
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  className="w-full px-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-blue-500 transition"
+                />
+              </div>
+
+              {/* Category & Unit of Measure */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {/* Category with Custom Option */}
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    Product Name *
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="e.g. Arabica Coffee Beans"
-                    value={formData.name}
-                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                    className="w-full px-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-blue-500"
-                  />
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-xs font-semibold text-slate-700">
+                      Category
+                    </label>
+                    {!isCreatingCategory && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsCreatingCategory(true);
+                          setNewCategoryName('');
+                          setCategorySaveError(null);
+                        }}
+                        className="text-[11px] text-blue-600 hover:text-blue-700 font-semibold inline-flex items-center gap-0.5 transition"
+                      >
+                        <Plus className="w-3 h-3" />
+                        <span>Add Custom</span>
+                      </button>
+                    )}
+                  </div>
+
+                  {!isCreatingCategory ? (
+                    <select
+                      value={formData.category_id}
+                      onChange={(e) => {
+                        if (e.target.value === '__ADD_CUSTOM__') {
+                          setIsCreatingCategory(true);
+                          setNewCategoryName('');
+                          setCategorySaveError(null);
+                        } else {
+                          setFormData({ ...formData, category_id: e.target.value });
+                        }
+                      }}
+                      className="w-full px-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-blue-500 transition"
+                    >
+                      <option value="">Select Category</option>
+                      <option value="__ADD_CUSTOM__" className="font-semibold text-blue-600 bg-blue-50">
+                        + Add Custom Category...
+                      </option>
+                      {categories.length > 0 && (
+                        <optgroup label="Existing Categories">
+                          {categories.map((cat) => (
+                            <option key={cat.id} value={cat.id}>
+                              {cat.name}
+                            </option>
+                          ))}
+                        </optgroup>
+                      )}
+                    </select>
+                  ) : (
+                    <div className="p-2.5 bg-blue-50/70 border border-blue-200 rounded-xl space-y-2">
+                      <div className="flex items-center gap-1.5">
+                        <input
+                          type="text"
+                          autoFocus
+                          placeholder="New category name..."
+                          value={newCategoryName}
+                          onChange={(e) => setNewCategoryName(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              handleSaveCustomCategory();
+                            } else if (e.key === 'Escape') {
+                              setIsCreatingCategory(false);
+                              setCategorySaveError(null);
+                            }
+                          }}
+                          className="flex-1 px-2.5 py-1.5 text-xs bg-white border border-slate-200 rounded-lg focus:outline-none focus:border-blue-500"
+                        />
+                        <button
+                          type="button"
+                          disabled={categorySaveLoading || !newCategoryName.trim()}
+                          onClick={handleSaveCustomCategory}
+                          className="px-2.5 py-1.5 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-500 rounded-lg disabled:opacity-50 transition inline-flex items-center gap-1 shrink-0"
+                        >
+                          {categorySaveLoading ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            <Check className="w-3.5 h-3.5" />
+                          )}
+                          <span>Save</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsCreatingCategory(false);
+                            setCategorySaveError(null);
+                          }}
+                          className="px-2 py-1.5 text-xs text-slate-500 hover:text-slate-700 bg-white border border-slate-200 rounded-lg transition"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                      {categorySaveError && (
+                        <p className="text-[11px] text-red-600 font-medium">{categorySaveError}</p>
+                      )}
+                      <p className="text-[10px] text-slate-500">
+                        Type name & click Save (or press Enter) to add and select.
+                      </p>
+                    </div>
+                  )}
                 </div>
 
+                {/* Unit of Measure */}
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    SKU (Barcode/Item Code) *
+                    Unit of Measure
                   </label>
                   <input
                     type="text"
-                    required
-                    placeholder="e.g. COF-001"
-                    value={formData.sku}
-                    onChange={(e) => setFormData({ ...formData, sku: e.target.value })}
-                    className="w-full px-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-blue-500 font-mono"
+                    placeholder="pcs, kg, box, bottle..."
+                    value={formData.unit}
+                    onChange={(e) => setFormData({ ...formData, unit: e.target.value })}
+                    className="w-full px-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-blue-500 transition"
                   />
                 </div>
               </div>
 
+              {/* Price Fields (Cost Price & Selling Price) */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    Category
-                  </label>
-                  <select
-                    value={formData.category_id}
-                    onChange={(e) => setFormData({ ...formData, category_id: e.target.value })}
-                    className="w-full px-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-blue-500"
-                  >
-                    <option value="">Select Category</option>
-                    {categories.map((cat) => (
-                      <option key={cat.id} value={cat.id}>{cat.name}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    Supplier / Distributor
-                  </label>
-                  <select
-                    value={formData.supplier_id}
-                    onChange={(e) => setFormData({ ...formData, supplier_id: e.target.value })}
-                    className="w-full px-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-blue-500"
-                  >
-                    <option value="">Select Supplier</option>
-                    {suppliers.map((sup) => (
-                      <option key={sup.id} value={sup.id}>{sup.name}</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1">
                     Cost Price ({currency})
                   </label>
                   <input
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    required
+                    type="text"
+                    inputMode="decimal"
+                    placeholder="0.00"
                     value={formData.cost_price}
-                    onChange={(e) => setFormData({ ...formData, cost_price: parseFloat(e.target.value) || 0 })}
-                    className="w-full px-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-blue-500"
+                    onFocus={(e) => {
+                      if (e.target.value === '0' || e.target.value === '0.00' || e.target.value === '0.0') {
+                        setFormData((prev) => ({ ...prev, cost_price: '' }));
+                      }
+                    }}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (val === '' || /^\d*\.?\d*$/.test(val)) {
+                        setFormData((prev) => ({ ...prev, cost_price: val }));
+                      }
+                    }}
+                    className="w-full px-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-blue-500 transition font-medium text-slate-800"
                   />
                 </div>
 
@@ -498,42 +639,51 @@ export const ProductsView: React.FC = () => {
                     Selling Price ({currency}) *
                   </label>
                   <input
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    required
-                    value={formData.selling_price}
-                    onChange={(e) => setFormData({ ...formData, selling_price: parseFloat(e.target.value) || 0 })}
-                    className="w-full px-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-blue-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    Unit of Measure
-                  </label>
-                  <input
                     type="text"
-                    placeholder="pcs, kg, box..."
-                    value={formData.unit}
-                    onChange={(e) => setFormData({ ...formData, unit: e.target.value })}
-                    className="w-full px-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-blue-500"
+                    inputMode="decimal"
+                    required
+                    placeholder="0.00"
+                    value={formData.selling_price}
+                    onFocus={(e) => {
+                      if (e.target.value === '0' || e.target.value === '0.00' || e.target.value === '0.0') {
+                        setFormData((prev) => ({ ...prev, selling_price: '' }));
+                      }
+                    }}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (val === '' || /^\d*\.?\d*$/.test(val)) {
+                        setFormData((prev) => ({ ...prev, selling_price: val }));
+                      }
+                    }}
+                    className="w-full px-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-blue-500 transition font-medium text-slate-800"
                   />
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              {/* Stock Levels & Status */}
+              <div className={`grid grid-cols-1 ${!editingProduct ? 'sm:grid-cols-3' : 'sm:grid-cols-2'} gap-4`}>
                 {!editingProduct && (
                   <div>
                     <label className="block text-xs font-semibold text-slate-700 mb-1">
                       Initial Stock Quantity
                     </label>
                     <input
-                      type="number"
-                      min="0"
+                      type="text"
+                      inputMode="numeric"
+                      placeholder="0"
                       value={formData.initial_stock}
-                      onChange={(e) => setFormData({ ...formData, initial_stock: parseFloat(e.target.value) || 0 })}
-                      className="w-full px-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-blue-500"
+                      onFocus={(e) => {
+                        if (e.target.value === '0') {
+                          setFormData((prev) => ({ ...prev, initial_stock: '' }));
+                        }
+                      }}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (val === '' || /^\d*\.?\d*$/.test(val)) {
+                          setFormData((prev) => ({ ...prev, initial_stock: val }));
+                        }
+                      }}
+                      className="w-full px-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-blue-500 transition"
                     />
                   </div>
                 )}
@@ -543,11 +693,22 @@ export const ProductsView: React.FC = () => {
                     Low Stock Threshold
                   </label>
                   <input
-                    type="number"
-                    min="0"
+                    type="text"
+                    inputMode="numeric"
+                    placeholder="5"
                     value={formData.min_stock_level}
-                    onChange={(e) => setFormData({ ...formData, min_stock_level: parseFloat(e.target.value) || 0 })}
-                    className="w-full px-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-blue-500"
+                    onFocus={(e) => {
+                      if (e.target.value === '0') {
+                        setFormData((prev) => ({ ...prev, min_stock_level: '' }));
+                      }
+                    }}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (val === '' || /^\d*$/.test(val)) {
+                        setFormData((prev) => ({ ...prev, min_stock_level: val }));
+                      }
+                    }}
+                    className="w-full px-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-blue-500 transition"
                   />
                 </div>
 
@@ -558,7 +719,7 @@ export const ProductsView: React.FC = () => {
                   <select
                     value={formData.status}
                     onChange={(e) => setFormData({ ...formData, status: e.target.value as any })}
-                    className="w-full px-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-blue-500"
+                    className="w-full px-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-blue-500 transition"
                   >
                     <option value="active">Active</option>
                     <option value="inactive">Inactive</option>
@@ -567,6 +728,7 @@ export const ProductsView: React.FC = () => {
                 </div>
               </div>
 
+              {/* Description */}
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">
                   Description / Specifications
@@ -576,14 +738,15 @@ export const ProductsView: React.FC = () => {
                   placeholder="Optional product details..."
                   value={formData.description}
                   onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                  className="w-full px-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-blue-500"
+                  className="w-full px-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-blue-500 transition"
                 />
               </div>
 
+              {/* Action Buttons */}
               <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100">
                 <button
                   type="button"
-                  onClick={() => { setIsAddModalOpen(false); setEditingProduct(null); }}
+                  onClick={handleCloseModal}
                   className="px-4 py-2 text-sm font-medium text-slate-600 hover:text-slate-800 hover:bg-slate-100 rounded-xl transition"
                 >
                   Cancel

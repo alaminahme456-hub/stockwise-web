@@ -23,9 +23,7 @@ import {
   PackageCheck,
   UserPlus,
   ShoppingBag,
-  Calculator,
-  Coins,
-  Delete
+  Coins
 } from 'lucide-react';
 
 interface POSViewProps {
@@ -177,38 +175,6 @@ export const POSView: React.FC<POSViewProps> = ({ onNavigate }) => {
     }
     return 0;
   }, [tenderedNum, totalAmount]);
-
-  const handleKeypadPress = (val: string) => {
-    if (val === 'C') {
-      setCashTendered('');
-      return;
-    }
-    if (val === 'BACK') {
-      setCashTendered((prev) => prev.slice(0, -1));
-      return;
-    }
-    if (val === '.') {
-      if (!cashTendered.includes('.')) {
-        setCashTendered((prev) => (prev === '' ? '0.' : prev + '.'));
-      }
-      return;
-    }
-    // Limit decimal precision to 2
-    if (cashTendered.includes('.')) {
-      const parts = cashTendered.split('.');
-      if (parts[1] && parts[1].length >= 2) return;
-    }
-    setCashTendered((prev) => {
-      if (prev === '0') return val;
-      return prev + val;
-    });
-  };
-
-  const handleAddCash = (amountToAdd: number) => {
-    const cur = parseFloat(cashTendered) || 0;
-    const nextVal = (cur + amountToAdd).toFixed(2);
-    setCashTendered(nextVal);
-  };
 
   // Checkout Execution
   const handleCompleteSale = async () => {
@@ -592,187 +558,8 @@ export const POSView: React.FC<POSViewProps> = ({ onNavigate }) => {
             )}
           </div>
 
-          {/* Payment Method Selector */}
-          <div className="px-4 py-3 border-t border-slate-100 bg-slate-50/50">
-            <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-2">
-              Payment Method
-            </label>
-            <div className="grid grid-cols-4 gap-1.5">
-              {[
-                { id: 'cash', label: 'Cash', icon: Banknote },
-                { id: 'bank_transfer', label: 'Transfer', icon: Building },
-                { id: 'pos', label: 'POS Card', icon: CreditCard },
-                { id: 'mixed', label: 'Mixed', icon: Receipt },
-              ].map((m) => {
-                const Icon = m.icon;
-                const isSelected = paymentMethod === m.id;
-                return (
-                  <button
-                    key={m.id}
-                    type="button"
-                    onClick={() => setPaymentMethod(m.id as PaymentMethod)}
-                    className={`py-2 px-1 text-center rounded-xl border text-xs font-semibold transition flex flex-col items-center gap-1 ${
-                      isSelected
-                        ? 'border-blue-600 bg-blue-50 text-blue-700'
-                        : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-100'
-                    }`}
-                  >
-                    <Icon className="w-3.5 h-3.5" />
-                    <span className="truncate">{m.label}</span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Cash Payment Calculator Interface */}
-          {paymentMethod === 'cash' && (
-            <div className="px-4 py-3 border-t border-slate-200 bg-blue-50/20 space-y-2.5">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-1.5 text-xs font-bold text-slate-800">
-                  <Calculator className="w-4 h-4 text-blue-600" />
-                  <span>Cash Tendered &amp; Change Calculator</span>
-                </div>
-                {cashTendered && (
-                  <button
-                    type="button"
-                    onClick={() => setCashTendered('')}
-                    className="text-[11px] font-medium text-slate-500 hover:text-red-600 transition"
-                  >
-                    Clear
-                  </button>
-                )}
-              </div>
-
-              {/* Amount Tendered Input */}
-              <div>
-                <label className="block text-[11px] font-semibold text-slate-600 mb-1">
-                  Amount Tendered by Customer
-                </label>
-                <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-sm">
-                    {currency === 'USD' ? '$' : currency}
-                  </span>
-                  <input
-                    type="text"
-                    inputMode="decimal"
-                    placeholder="0.00"
-                    value={cashTendered}
-                    onFocus={(e) => {
-                      if (e.target.value === '0' || e.target.value === '0.00') {
-                        setCashTendered('');
-                      }
-                    }}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      if (/^\d*\.?\d{0,2}$/.test(val) || val === '') {
-                        setCashTendered(val);
-                      }
-                    }}
-                    className="w-full pl-8 pr-16 py-2 bg-white border border-slate-300 rounded-xl text-lg font-bold font-mono text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setCashTendered(totalAmount.toFixed(2))}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-semibold rounded-lg transition"
-                    title="Set Exact Total"
-                  >
-                    Exact
-                  </button>
-                </div>
-              </div>
-
-              {/* Quick Cash Presets */}
-              <div className="flex flex-wrap gap-1.5">
-                <button
-                  type="button"
-                  onClick={() => setCashTendered(totalAmount.toFixed(2))}
-                  className="px-2.5 py-1 text-xs font-semibold rounded-lg bg-white border border-slate-200 hover:bg-blue-50 hover:border-blue-300 hover:text-blue-700 transition"
-                >
-                  Exact ({formatCurrency(totalAmount, currency)})
-                </button>
-                {[5, 10, 20, 50, 100].map((denomination) => {
-                  const roundVal = Math.ceil(totalAmount / denomination) * denomination;
-                  if (roundVal > totalAmount && roundVal <= totalAmount + denomination * 2) {
-                    return (
-                      <button
-                        key={roundVal}
-                        type="button"
-                        onClick={() => setCashTendered(roundVal.toFixed(2))}
-                        className="px-2 py-1 text-xs font-semibold rounded-lg bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 transition"
-                      >
-                        ${roundVal}
-                      </button>
-                    );
-                  }
-                  return null;
-                }).filter(Boolean).slice(0, 3)}
-              </div>
-
-              {/* On-Screen Calculator Keypad */}
-              <div className="grid grid-cols-4 gap-1 pt-1">
-                {['1', '2', '3', '+5', '4', '5', '6', '+10', '7', '8', '9', '+20', 'C', '0', '.', '⌫'].map((key) => {
-                  const isQuickAdd = key.startsWith('+');
-                  const isAction = key === 'C' || key === '⌫';
-                  return (
-                    <button
-                      key={key}
-                      type="button"
-                      onClick={() => {
-                        if (isQuickAdd) {
-                          handleAddCash(parseInt(key.replace('+', ''), 10));
-                        } else if (key === '⌫') {
-                          handleKeypadPress('BACK');
-                        } else {
-                          handleKeypadPress(key);
-                        }
-                      }}
-                      className={`py-1.5 text-xs font-bold rounded-lg border transition ${
-                        isQuickAdd 
-                          ? 'bg-blue-50 border-blue-200 text-blue-700 hover:bg-blue-100'
-                          : isAction
-                          ? 'bg-slate-100 border-slate-200 text-slate-700 hover:bg-slate-200'
-                          : 'bg-white border-slate-200 text-slate-800 hover:bg-slate-50'
-                      }`}
-                    >
-                      {key}
-                    </button>
-                  );
-                })}
-              </div>
-
-              {/* Change Due / Remaining Automatic Calculation */}
-              <div className="pt-2 border-t border-slate-200/80">
-                {tenderedNum >= totalAmount ? (
-                  <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center justify-between">
-                    <div className="flex items-center gap-1.5 text-emerald-800 font-semibold text-xs">
-                      <Coins className="w-4 h-4 text-emerald-600" />
-                      <span>Change Due to Customer:</span>
-                    </div>
-                    <span className="text-base font-bold font-mono text-emerald-700">
-                      {formatCurrency(changeDue, currency)}
-                    </span>
-                  </div>
-                ) : tenderedNum > 0 ? (
-                  <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200 flex items-center justify-between">
-                    <div className="text-amber-800 font-semibold text-xs">
-                      <span>Remaining to Pay:</span>
-                    </div>
-                    <span className="text-sm font-bold font-mono text-amber-700">
-                      {formatCurrency(amountShort, currency)}
-                    </span>
-                  </div>
-                ) : (
-                  <div className="text-[11px] text-slate-500 text-center py-1">
-                    Enter customer's cash to calculate change automatically
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
           {/* Order Totals & Discount Calculation */}
-          <div className="p-4 border-t border-slate-200 space-y-2 bg-slate-50/50 text-xs pb-32 sm:pb-8">
+          <div className="p-4 border-t border-slate-200 space-y-2 bg-slate-50/60 text-xs">
             <div className="flex justify-between text-slate-600">
               <span>Subtotal:</span>
               <span className="font-semibold text-slate-800">{formatCurrency(subtotal, currency)}</span>
@@ -787,7 +574,7 @@ export const POSView: React.FC<POSViewProps> = ({ onNavigate }) => {
                 max="100"
                 value={discountPercent}
                 onChange={(e) => setDiscountPercent(Math.min(100, Math.max(0, parseFloat(e.target.value) || 0)))}
-                className="w-16 px-2 py-1 text-right text-xs bg-white border border-slate-200 rounded-md font-semibold"
+                className="w-16 px-2 py-1 text-right text-xs bg-white border border-slate-200 rounded-md font-semibold focus:outline-none focus:border-blue-500"
               />
             </div>
 
@@ -805,19 +592,118 @@ export const POSView: React.FC<POSViewProps> = ({ onNavigate }) => {
               </div>
             )}
 
-            <div className="flex justify-between items-center text-base font-bold text-slate-900 pt-2 border-t border-slate-200">
+            <div className="flex justify-between items-center text-sm font-bold text-slate-900 pt-2 border-t border-slate-200">
               <span>Total Payable:</span>
-              <span className="text-xl text-blue-600">{formatCurrency(totalAmount, currency)}</span>
+              <span className="text-lg text-blue-600 font-extrabold">{formatCurrency(totalAmount, currency)}</span>
             </div>
+          </div>
 
-            {/* Checkout Action Button */}
+          {/* Payment Method Selector */}
+          <div className="px-4 py-3 border-t border-slate-200 bg-white">
+            <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-2">
+              Payment Method
+            </label>
+            <div className="grid grid-cols-4 gap-1.5">
+              {[
+                { id: 'cash', label: 'Cash', icon: Banknote },
+                { id: 'bank_transfer', label: 'Transfer', icon: Building },
+                { id: 'pos', label: 'POS Card', icon: CreditCard },
+                { id: 'mixed', label: 'Mixed', icon: Receipt },
+              ].map((m) => {
+                const Icon = m.icon;
+                const isSelected = paymentMethod === m.id;
+                return (
+                  <button
+                    key={m.id}
+                    type="button"
+                    onClick={() => setPaymentMethod(m.id as PaymentMethod)}
+                    className={`py-2 px-1 text-center rounded-xl border text-xs font-semibold transition flex flex-col items-center gap-1 cursor-pointer ${
+                      isSelected
+                        ? 'border-blue-600 bg-blue-50 text-blue-700 shadow-xs'
+                        : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+                    }`}
+                  >
+                    <Icon className="w-3.5 h-3.5" />
+                    <span className="truncate">{m.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Consolidated Single Amount Tendered Field for Cash */}
+          {paymentMethod === 'cash' && (
+            <div className="px-4 py-3 border-t border-slate-200 bg-blue-50/30 space-y-2">
+              <div className="flex items-center justify-between">
+                <label className="block text-xs font-semibold text-slate-700">
+                  Amount Tendered
+                </label>
+                {cashTendered && (
+                  <button
+                    type="button"
+                    onClick={() => setCashTendered('')}
+                    className="text-[11px] font-medium text-slate-400 hover:text-red-600 transition cursor-pointer"
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
+
+              <div className="relative">
+                <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-sm select-none">
+                  {currency === 'USD' ? '$' : currency}
+                </span>
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  placeholder={totalAmount > 0 ? totalAmount.toFixed(2) : "0.00"}
+                  value={cashTendered}
+                  onFocus={(e) => {
+                    if (e.target.value === '0' || e.target.value === '0.00') {
+                      setCashTendered('');
+                    }
+                  }}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    if (/^\d*\.?\d{0,2}$/.test(val) || val === '') {
+                      setCashTendered(val);
+                    }
+                  }}
+                  className="w-full pl-8 pr-4 py-2 bg-white border border-slate-300 rounded-xl text-base font-bold font-mono text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition shadow-xs"
+                />
+              </div>
+
+              {/* Automatic Change Calculation Display */}
+              {tenderedNum >= totalAmount && totalAmount > 0 ? (
+                <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center justify-between">
+                  <div className="flex items-center gap-1.5 text-emerald-800 font-semibold text-xs">
+                    <Coins className="w-4 h-4 text-emerald-600" />
+                    <span>Change Due:</span>
+                  </div>
+                  <span className="text-base font-bold font-mono text-emerald-700">
+                    {formatCurrency(changeDue, currency)}
+                  </span>
+                </div>
+              ) : tenderedNum > 0 && tenderedNum < totalAmount ? (
+                <div className="p-2 rounded-xl bg-amber-50 border border-amber-200 flex items-center justify-between text-xs font-semibold text-amber-800">
+                  <span>Remaining to Pay:</span>
+                  <span className="font-mono font-bold text-amber-700">
+                    {formatCurrency(amountShort, currency)}
+                  </span>
+                </div>
+              ) : null}
+            </div>
+          )}
+
+          {/* Checkout Action Button */}
+          <div className="p-4 border-t border-slate-200 bg-white pb-32 sm:pb-4">
             <button
               type="button"
               id="btn-complete-sale"
               data-testid="pay-button"
               disabled={cart.length === 0 || isProcessing}
               onClick={handleCompleteSale}
-              className="w-full mt-3 py-3.5 px-4 rounded-xl bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white font-bold text-sm shadow-md shadow-blue-500/20 flex items-center justify-center gap-2 transition disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+              className="w-full py-3.5 px-4 rounded-xl bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white font-bold text-sm shadow-md shadow-blue-500/20 flex items-center justify-center gap-2 transition disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
             >
               {isProcessing ? (
                 <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />

@@ -1,13 +1,17 @@
-name: Build Android APK
+name: StockWise Android Release
 
 on:
   workflow_dispatch:
-  push:
-    branches: [main, android-apk]
 
 jobs:
-  build-apk:
+  release:
     runs-on: ubuntu-latest
+    env:
+      ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+      ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+      ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+      ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -35,13 +39,122 @@ jobs:
       - name: Sync Capacitor
         run: npx cap sync android
 
-      - name: Build debug APK
-        working-directory: android
-        run: ./gradlew assembleDebug --no-daemon
+      - name: Apply StockWise launcher icon
+        shell: bash
+        run: |
+          mkdir -p android/app/src/main/res/drawable
+          mkdir -p android/app/src/main/res/mipmap-anydpi-v21
+          mkdir -p android/app/src/main/res/mipmap-anydpi-v26
 
-      - name: Upload APK
+          cat > android/app/src/main/res/drawable/ic_stockwise.xml <<'EOF'
+          <vector xmlns:android="http://schemas.android.com/apk/res/android"
+              android:width="108dp"
+              android:height="108dp"
+              android:viewportWidth="108"
+              android:viewportHeight="108">
+            <path android:fillColor="#FFFFFF"
+              android:pathData="M26,34 C26,25 34,20 45,20 L77,20 L77,31 L46,31 C40,31 37,33 37,37 C37,41 40,43 47,44 L62,46 C73,48 80,54 80,64 C80,75 71,82 59,82 L27,82 L27,71 L58,71 C64,71 68,68 68,64 C68,60 65,58 58,57 L43,55 C32,53 26,47 26,34Z" />
+            <path android:fillColor="#FFFFFF"
+              android:pathData="M35,49 L47,49 L54,67 L61,49 L73,49 L58,82 L48,82 Z" />
+          </vector>
+          EOF
+
+          cp android/app/src/main/res/drawable/ic_stockwise.xml android/app/src/main/res/mipmap-anydpi-v21/ic_launcher.xml
+
+          cat > android/app/src/main/res/values/colors.xml <<'EOF'
+          <resources>
+            <color name="stockwise_blue">#2563EB</color>
+            <color name="stockwise_splash_background">#0B1220</color>
+          </resources>
+          EOF
+
+          cat > android/app/src/main/res/drawable/ic_launcher_background.xml <<'EOF'
+          <shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+            <solid android:color="#2563EB" />
+          </shape>
+          EOF
+
+          cat > android/app/src/main/res/drawable/ic_launcher_foreground.xml <<'EOF'
+          <vector xmlns:android="http://schemas.android.com/apk/res/android"
+              android:width="108dp"
+              android:height="108dp"
+              android:viewportWidth="108"
+              android:viewportHeight="108">
+            <path android:fillColor="#FFFFFF"
+              android:pathData="M26,34 C26,25 34,20 45,20 L77,20 L77,31 L46,31 C40,31 37,33 37,37 C37,41 40,43 47,44 L62,46 C73,48 80,54 80,64 C80,75 71,82 59,82 L27,82 L27,71 L58,71 C64,71 68,68 68,64 C68,60 65,58 58,57 L43,55 C32,53 26,47 26,34Z" />
+            <path android:fillColor="#FFFFFF"
+              android:pathData="M35,49 L47,49 L54,67 L61,49 L73,49 L58,82 L48,82 Z" />
+          </vector>
+          EOF
+
+          cat > android/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml <<'EOF'
+          <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+            <background android:drawable="@drawable/ic_launcher_background" />
+            <foreground android:drawable="@drawable/ic_launcher_foreground" />
+          </adaptive-icon>
+          EOF
+
+          cp android/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml android/app/src/main/res/mipmap-anydpi-v26/ic_launcher_round.xml
+
+      - name: Configure immersive fullscreen
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path("android/app/src/main/res/values/styles.xml")
+          s = p.read_text()
+          if '<item name="android:windowFullscreen">true</item>' not in s:
+              s = s.replace('</style>', '    <item name="android:windowFullscreen">true</item>\n    <item name="android:windowActionModeOverlay">true</item>\n</style>')
+          p.write_text(s)
+          PY
+
+      - name: Verify release signing secrets
+        shell: bash
+        run: |
+          test -n "$ANDROID_KEYSTORE_BASE64" || (echo "Missing ANDROID_KEYSTORE_BASE64 repository secret" && exit 1)
+          test -n "$ANDROID_KEYSTORE_PASSWORD" || (echo "Missing ANDROID_KEYSTORE_PASSWORD repository secret" && exit 1)
+          test -n "$ANDROID_KEY_ALIAS" || (echo "Missing ANDROID_KEY_ALIAS repository secret" && exit 1)
+          test -n "$ANDROID_KEY_PASSWORD" || (echo "Missing ANDROID_KEY_PASSWORD repository secret" && exit 1)
+
+      - name: Restore upload keystore
+        shell: bash
+        run: |
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/stockwise-upload.jks"
+          test -s "$RUNNER_TEMP/stockwise-upload.jks"
+
+      - name: Build signed AAB
+        run: |
+          npx cap build android \
+            --androidreleasetype AAB \
+            --keystorepath "$RUNNER_TEMP/stockwise-upload.jks" \
+            --keystorepass "$ANDROID_KEYSTORE_PASSWORD" \
+            --keystorealias "$ANDROID_KEY_ALIAS" \
+            --keystorealiaspass "$ANDROID_KEY_PASSWORD" \
+            --signing-type apksigner
+
+      - name: Build signed APK
+        run: |
+          npx cap build android \
+            --androidreleasetype APK \
+            --keystorepath "$RUNNER_TEMP/stockwise-upload.jks" \
+            --keystorepass "$ANDROID_KEYSTORE_PASSWORD" \
+            --keystorealias "$ANDROID_KEY_ALIAS" \
+            --keystorealiaspass "$ANDROID_KEY_PASSWORD" \
+            --signing-type apksigner
+
+      - name: Collect release artifacts
+        shell: bash
+        run: |
+          mkdir -p release
+          find android -type f \\( -name "*.aab" -o -name "*.apk" \\) -print -exec cp {} release/ \\;
+          ls -lah release
+          test -n "$(find release -type f -name '*.aab' -print -quit)"
+          test -n "$(find release -type f -name '*.apk' -print -quit)"
+
+      - name: Upload Play-ready release artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: stockwise-android-debug
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          name: stockwise-1.0.0-release
+          path: release/
           if-no-files-found: error
+          retention-days: 30

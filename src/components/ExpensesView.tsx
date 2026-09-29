@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { Expense } from '../types';
 import { createExpense, updateExpense, deleteExpense } from '../lib/db';
 import { formatCurrency, formatDate } from '../lib/utils';
+import { ExpandableSearch } from './ExpandableSearch';
 import { 
   CreditCard, 
   Plus, 
@@ -155,18 +156,25 @@ export const ExpensesView: React.FC = () => {
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
-          <div className="p-3 bg-white rounded-xl border border-slate-200 shadow-xs flex items-center gap-3">
-            <div className="text-xs text-slate-500">Total Spent:</div>
-            <div className="text-lg font-bold text-red-600">
+        <div className="flex flex-wrap items-center gap-2.5 self-end sm:self-auto">
+          <div className="px-3 py-2 bg-white rounded-xl border border-slate-200 shadow-xs flex items-center gap-2">
+            <span className="text-xs text-slate-500 font-medium">Total Spent:</span>
+            <span className="text-sm sm:text-base font-bold text-red-600">
               {formatCurrency(totalExpenseAmount, currency)}
-            </div>
+            </span>
           </div>
+
+          {/* Expandable Search Button in Top Right Corner */}
+          <ExpandableSearch
+            value={searchQuery}
+            onChange={setSearchQuery}
+            placeholder="Search expense description or notes..."
+          />
 
           <button
             type="button"
             onClick={handleOpenAdd}
-            className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-sm font-semibold shadow-xs transition"
+            className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-sm font-semibold shadow-xs transition shrink-0"
           >
             <Plus className="w-4 h-4" />
             <span>Add Expense</span>
@@ -174,17 +182,25 @@ export const ExpensesView: React.FC = () => {
         </div>
       </div>
 
-      {/* Filter and Search Bar */}
-      <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex flex-col md:flex-row gap-3 items-stretch md:items-center justify-between">
-        <div className="relative flex-1">
-          <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-          <input
-            type="text"
-            placeholder="Search expense description or notes..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-blue-500 transition"
-          />
+      {/* Filter Bar */}
+      <div className="bg-white p-3.5 sm:p-4 rounded-2xl border border-slate-200 shadow-xs flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-2">
+          {searchQuery && (
+            <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-blue-50 border border-blue-200 text-blue-700 text-xs font-semibold rounded-xl">
+              <span>Searching: "{searchQuery}" ({filteredExpenses.length} results)</span>
+              <button
+                type="button"
+                onClick={() => setSearchQuery('')}
+                className="hover:text-blue-900 cursor-pointer ml-0.5"
+                title="Clear search"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
+          <span className="text-xs text-slate-500 font-medium">
+            Showing {filteredExpenses.length} of {expenses.length} expense entries
+          </span>
         </div>
 
         <div className="flex items-center gap-2">

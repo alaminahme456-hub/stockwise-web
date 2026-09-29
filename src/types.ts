@@ -130,6 +130,8 @@ export interface Sale {
   status: SaleStatus;
   staff_name?: string | null;
   notes?: string | null;
+  amount_tendered?: number;
+  change_due?: number;
   created_at: string;
   items?: SaleItem[];
 }

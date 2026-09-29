@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { Product } from '../types';
 import { createProduct, updateProduct, deleteProduct, createCategory } from '../lib/db';
 import { formatCurrency, formatDate } from '../lib/utils';
+import { ExpandableSearch } from './ExpandableSearch';
 import { 
   Plus, 
   Search, 
@@ -273,29 +274,45 @@ export const ProductsView: React.FC = () => {
           </p>
         </div>
 
-        <button
-          type="button"
-          id="btn-add-product"
-          onClick={handleOpenAdd}
-          className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white text-sm font-semibold shadow-xs transition"
-        >
-          <Plus className="w-4 h-4" />
-          <span>Add Product</span>
-        </button>
+        <div className="flex items-center gap-2.5 self-end sm:self-auto">
+          {/* Expandable Search Button in Top Right Corner */}
+          <ExpandableSearch
+            value={searchQuery}
+            onChange={setSearchQuery}
+            placeholder="Search by product name, SKU, or description..."
+          />
+
+          <button
+            type="button"
+            id="btn-add-product"
+            onClick={handleOpenAdd}
+            className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white text-sm font-semibold shadow-xs transition shrink-0"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Add Product</span>
+          </button>
+        </div>
       </div>
 
-      {/* Filter and Search Bar */}
+      {/* Filter Bar */}
       <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex flex-col md:flex-row gap-3 items-stretch md:items-center justify-between">
-        {/* Search Input */}
-        <div className="relative flex-1">
-          <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-          <input
-            type="text"
-            placeholder="Search by product name, SKU, or description..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-blue-500 transition"
-          />
+        <div className="flex flex-wrap items-center gap-2">
+          {searchQuery && (
+            <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-blue-50 border border-blue-200 text-blue-700 text-xs font-semibold rounded-xl">
+              <span>Searching: "{searchQuery}"</span>
+              <button
+                type="button"
+                onClick={() => setSearchQuery('')}
+                className="hover:text-blue-900 cursor-pointer ml-0.5"
+                title="Clear search query"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
+          <span className="text-xs text-slate-500 font-medium">
+            Showing {filteredProducts.length} of {products.length} products
+          </span>
         </div>
 
         {/* Filter Controls */}
@@ -336,115 +353,110 @@ export const ProductsView: React.FC = () => {
         </div>
       </div>
 
-      {/* Products Table */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm text-slate-600">
-            <thead className="bg-slate-50 text-xs uppercase text-slate-500 font-semibold border-b border-slate-200">
-              <tr>
-                <th className="px-5 py-3">Product Name</th>
-                <th className="px-5 py-3">SKU</th>
-                <th className="px-5 py-3">Category</th>
-                <th className="px-5 py-3 text-right">Cost Price</th>
-                <th className="px-5 py-3 text-right">Selling Price</th>
-                <th className="px-5 py-3 text-right">Current Stock</th>
-                <th className="px-5 py-3 text-center">Status</th>
-                <th className="px-5 py-3 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {filteredProducts.length === 0 ? (
-                <tr>
-                  <td colSpan={8} className="px-5 py-12 text-center text-slate-400">
-                    <Package className="w-8 h-8 mx-auto mb-2 text-slate-300" />
-                    <p className="font-medium text-slate-600">No products found</p>
-                    <p className="text-xs text-slate-400 mt-1">Try adjusting your search query or add a new product.</p>
-                  </td>
-                </tr>
-              ) : (
-                filteredProducts.map((product) => {
-                  const stock = Number(product.current_stock);
-                  const min = Number(product.min_stock_level);
-                  const isLow = stock > 0 && stock <= min;
-                  const isOut = stock <= 0;
+      {/* Products List (Replaced horizontal scrolling table with clickable list items) */}
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-xs divide-y divide-slate-100 overflow-hidden">
+        {filteredProducts.length === 0 ? (
+          <div className="px-5 py-16 text-center text-slate-400">
+            <Package className="w-10 h-10 mx-auto mb-2 text-slate-300" />
+            <p className="font-semibold text-slate-700">No products found</p>
+            <p className="text-xs text-slate-400 mt-1">Try adjusting your search query or add a new product.</p>
+          </div>
+        ) : (
+          filteredProducts.map((product) => {
+            const stock = Number(product.current_stock);
+            const min = Number(product.min_stock_level);
+            const isLow = stock > 0 && stock <= min;
+            const isOut = stock <= 0;
+            const profit = Number(product.selling_price) - Number(product.cost_price);
 
-                  return (
-                    <tr key={product.id} className="hover:bg-slate-50/70 transition">
-                      <td className="px-5 py-3.5 font-medium text-slate-900">
-                        <div className="font-semibold text-slate-900">{product.name}</div>
-                        {product.description && (
-                          <div className="text-xs text-slate-400 truncate max-w-xs">{product.description}</div>
-                        )}
-                      </td>
-                      <td className="px-5 py-3.5 font-mono text-xs text-slate-500">
-                        {product.sku}
-                      </td>
-                      <td className="px-5 py-3.5">
-                        <span className="px-2 py-0.5 rounded-md text-xs font-medium bg-slate-100 text-slate-700">
-                          {product.category_name || 'General'}
-                        </span>
-                      </td>
-                      <td className="px-5 py-3.5 text-right font-mono text-xs text-slate-600">
-                        {formatCurrency(product.cost_price, currency)}
-                      </td>
-                      <td className="px-5 py-3.5 text-right font-mono text-xs font-semibold text-slate-900">
-                        {formatCurrency(product.selling_price, currency)}
-                      </td>
-                      <td className="px-5 py-3.5 text-right font-semibold">
-                        <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs font-medium ${
-                          isOut 
-                            ? 'bg-red-50 text-red-700 font-bold' 
-                            : isLow 
-                            ? 'bg-amber-50 text-amber-700' 
-                            : 'bg-emerald-50 text-emerald-700'
-                        }`}>
-                          {product.current_stock} {product.unit}
-                        </span>
-                      </td>
-                      <td className="px-5 py-3.5 text-center">
-                        <span className={`px-2 py-0.5 rounded-full text-xs font-medium capitalize ${
-                          product.status === 'active' 
-                            ? 'bg-emerald-100 text-emerald-800' 
-                            : 'bg-slate-100 text-slate-600'
-                        }`}>
-                          {product.status}
-                        </span>
-                      </td>
-                      <td className="px-5 py-3.5 text-right">
-                        <div className="flex items-center justify-end gap-1">
-                          <button
-                            type="button"
-                            onClick={() => setViewingProduct(product)}
-                            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition"
-                            title="View Details"
-                          >
-                            <Eye className="w-4 h-4" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleOpenEdit(product)}
-                            className="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition"
-                            title="Edit Product"
-                          >
-                            <Edit className="w-4 h-4" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setDeletingProduct(product)}
-                            className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition"
-                            title="Delete Product"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
+            return (
+              <div
+                key={product.id}
+                onClick={() => setViewingProduct(product)}
+                className="p-4 sm:px-6 hover:bg-slate-50/80 transition cursor-pointer flex flex-col sm:flex-row sm:items-center justify-between gap-3 group"
+              >
+                {/* Left: Product Information & Stock */}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h3 className="font-bold text-slate-900 group-hover:text-blue-600 transition truncate text-sm sm:text-base">
+                      {product.name}
+                    </h3>
+                    <span className={`inline-flex items-center gap-1 text-[11px] font-medium ${
+                      isOut 
+                        ? 'text-red-700 font-bold' 
+                        : isLow 
+                        ? 'text-amber-700 font-semibold' 
+                        : 'text-emerald-700'
+                    }`}>
+                      <span className={`w-1.5 h-1.5 rounded-full ${
+                        isOut ? 'bg-red-500' : isLow ? 'bg-amber-500' : 'bg-emerald-500'
+                      }`} />
+                      {isOut ? 'Out of stock' : isLow ? `Low stock (${product.current_stock} ${product.unit})` : `${product.current_stock} ${product.unit} in stock`}
+                    </span>
+                  </div>
+
+                  {/* Clean unboxed metadata with subtle typographic separators */}
+                  <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500 mt-1">
+                    <span className="font-medium text-slate-700">{product.category_name || 'General'}</span>
+                    <span aria-hidden="true" className="text-slate-300">·</span>
+                    <span className="font-mono text-slate-400">SKU: {product.sku}</span>
+                    <span aria-hidden="true" className="text-slate-300">·</span>
+                    <span className="capitalize text-slate-500">{product.status}</span>
+                  </div>
+
+                  {product.description && (
+                    <p className="text-xs text-slate-400 truncate max-w-lg mt-1">
+                      {product.description}
+                    </p>
+                  )}
+                </div>
+
+                {/* Right: Pricing & Quick Actions */}
+                <div className="flex items-center justify-between sm:justify-end gap-4 shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-100">
+                  <div className="text-left sm:text-right">
+                    <div className="font-bold text-slate-900 font-mono text-sm sm:text-base">
+                      {formatCurrency(product.selling_price, currency)}
+                    </div>
+                    <div className="text-[11px] text-slate-400 font-mono">
+                      Cost: {formatCurrency(product.cost_price, currency)} {profit > 0 ? `(+${formatCurrency(profit, currency)})` : ''}
+                    </div>
+                  </div>
+
+                  {/* Quick Action Buttons */}
+                  <div 
+                    className="flex items-center gap-1"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => setViewingProduct(product)}
+                      className="p-2 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition"
+                      title="View Details"
+                    >
+                      <Eye className="w-4 h-4" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleOpenEdit(product)}
+                      className="p-2 rounded-xl text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition"
+                      title="Edit Product"
+                    >
+                      <Edit className="w-4 h-4" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setDeletingProduct(product)}
+                      className="p-2 rounded-xl text-slate-400 hover:text-red-600 hover:bg-red-50 transition"
+                      title="Delete Product"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          })
+        )}
       </div>
 
       {/* Add / Edit Product Modal */}
@@ -797,8 +809,25 @@ export const ProductsView: React.FC = () => {
                 <span className="font-medium text-slate-900">{formatCurrency(viewingProduct.cost_price, currency)}</span>
               </div>
               <div className="flex justify-between py-1.5 border-b border-slate-100">
+                <span className="text-slate-500">Estimated Profit / Margin:</span>
+                <span className="font-semibold text-emerald-600">
+                  {formatCurrency(Number(viewingProduct.selling_price) - Number(viewingProduct.cost_price), currency)}
+                  {Number(viewingProduct.selling_price) > 0 && (
+                    <span className="text-xs font-normal text-slate-500 ml-1">
+                      ({Math.round(((Number(viewingProduct.selling_price) - Number(viewingProduct.cost_price)) / Number(viewingProduct.selling_price)) * 100)}%)
+                    </span>
+                  )}
+                </span>
+              </div>
+              <div className="flex justify-between py-1.5 border-b border-slate-100">
                 <span className="text-slate-500">Current Stock:</span>
                 <span className="font-bold text-slate-900">{viewingProduct.current_stock} {viewingProduct.unit}</span>
+              </div>
+              <div className="flex justify-between py-1.5 border-b border-slate-100">
+                <span className="text-slate-500">Stock Valuation:</span>
+                <span className="font-bold text-slate-800 font-mono">
+                  {formatCurrency(Number(viewingProduct.current_stock) * Number(viewingProduct.cost_price), currency)}
+                </span>
               </div>
               <div className="flex justify-between py-1.5 border-b border-slate-100">
                 <span className="text-slate-500">Minimum Stock Alert:</span>
@@ -818,11 +847,38 @@ export const ProductsView: React.FC = () => {
               )}
             </div>
 
-            <div className="mt-6 flex justify-end">
+            <div className="mt-6 flex items-center justify-between gap-2 pt-2 border-t border-slate-100">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const prod = viewingProduct;
+                    setViewingProduct(null);
+                    handleOpenEdit(prod);
+                  }}
+                  className="px-3 py-2 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-semibold rounded-xl transition flex items-center gap-1.5"
+                >
+                  <Edit className="w-3.5 h-3.5" />
+                  <span>Edit Product</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const prod = viewingProduct;
+                    setViewingProduct(null);
+                    setDeletingProduct(prod);
+                  }}
+                  className="px-3 py-2 bg-red-50 hover:bg-red-100 text-red-600 text-xs font-semibold rounded-xl transition flex items-center gap-1.5"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Delete</span>
+                </button>
+              </div>
+
               <button
                 type="button"
                 onClick={() => setViewingProduct(null)}
-                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 text-sm font-medium rounded-xl transition"
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-semibold rounded-xl transition"
               >
                 Close
               </button>

@@ -603,6 +603,8 @@ export async function createSaleWithItems(
     paymentMethod: PaymentMethod;
     staffName?: string | null;
     notes?: string | null;
+    amountTendered?: number;
+    changeDue?: number;
   },
   items: Array<{
     productId: string;
@@ -691,7 +693,11 @@ export async function createSaleWithItems(
       // Ignore if table not created
     }
 
-    return sale;
+    return {
+      ...sale,
+      amount_tendered: saleData.amountTendered,
+      change_due: saleData.changeDue,
+    };
   } catch (err) {
     console.warn('Supabase sale creation fallback to user-isolated storage:', err);
     const { userId, storage } = findStorageForStore(storeId);
@@ -737,6 +743,8 @@ export async function createSaleWithItems(
       status: 'completed',
       staff_name: saleData.staffName || null,
       notes: saleData.notes || null,
+      amount_tendered: saleData.amountTendered,
+      change_due: saleData.changeDue,
       created_at: new Date().toISOString(),
       items: items.map((it, idx) => ({
         id: `item-${Date.now()}-${idx}`,

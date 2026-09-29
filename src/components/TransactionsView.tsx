@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { useStore } from '../context/StoreContext';
 import { PaymentMethod, Sale } from '../types';
 import { formatCurrency, formatDate } from '../lib/utils';
+import { ExpandableSearch } from './ExpandableSearch';
 import { 
   Receipt, 
   Search, 
@@ -53,23 +54,40 @@ export const TransactionsView: React.FC<{ onViewSaleDetail?: (s: Sale) => void }
           </p>
         </div>
 
-        <div className="p-3 bg-white rounded-xl border border-slate-200 shadow-xs flex items-center gap-3">
-          <div className="text-xs text-slate-500">Ledger Total:</div>
-          <div className="text-lg font-bold text-slate-900">{formatCurrency(totalRevenue, currency)}</div>
+        <div className="flex items-center gap-2.5 self-end sm:self-auto">
+          <div className="px-3 py-2 bg-white rounded-xl border border-slate-200 shadow-xs flex items-center gap-2">
+            <span className="text-xs text-slate-500 font-medium">Ledger Total:</span>
+            <span className="text-sm sm:text-base font-bold text-slate-900">{formatCurrency(totalRevenue, currency)}</span>
+          </div>
+
+          {/* Expandable Search Button in Top Right Corner */}
+          <ExpandableSearch
+            value={searchQuery}
+            onChange={setSearchQuery}
+            placeholder="Search by receipt ID, customer, cashier..."
+          />
         </div>
       </div>
 
-      {/* Filter and Search Bar */}
-      <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex flex-col md:flex-row gap-3 items-stretch md:items-center justify-between">
-        <div className="relative flex-1">
-          <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-          <input
-            type="text"
-            placeholder="Search by receipt ID, customer name, or cashier..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-blue-500 transition"
-          />
+      {/* Filter Bar */}
+      <div className="bg-white p-3.5 sm:p-4 rounded-2xl border border-slate-200 shadow-xs flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-2">
+          {searchQuery && (
+            <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-blue-50 border border-blue-200 text-blue-700 text-xs font-semibold rounded-xl">
+              <span>Searching: "{searchQuery}" ({filteredSales.length} records)</span>
+              <button
+                type="button"
+                onClick={() => setSearchQuery('')}
+                className="hover:text-blue-900 cursor-pointer ml-0.5"
+                title="Clear search"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
+          <span className="text-xs text-slate-500 font-medium">
+            Showing {filteredSales.length} of {sales.length} transactions
+          </span>
         </div>
 
         <div className="flex items-center gap-2">
@@ -87,78 +105,80 @@ export const TransactionsView: React.FC<{ onViewSaleDetail?: (s: Sale) => void }
         </div>
       </div>
 
-      {/* Transactions Table */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm text-slate-600">
-            <thead className="bg-slate-50 text-xs uppercase text-slate-500 font-semibold border-b border-slate-200">
-              <tr>
-                <th className="px-5 py-3">Receipt / ID</th>
-                <th className="px-5 py-3">Date & Time</th>
-                <th className="px-5 py-3">Customer</th>
-                <th className="px-5 py-3">Payment Method</th>
-                <th className="px-5 py-3">Cashier / Staff</th>
-                <th className="px-5 py-3 text-right">Items Count</th>
-                <th className="px-5 py-3 text-right">Amount</th>
-                <th className="px-5 py-3 text-center">Receipt</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {filteredSales.length === 0 ? (
-                <tr>
-                  <td colSpan={8} className="px-5 py-12 text-center text-slate-400">
-                    <Receipt className="w-8 h-8 mx-auto mb-2 text-slate-300" />
-                    <p className="font-medium text-slate-600">No transactions recorded yet</p>
-                  </td>
-                </tr>
-              ) : (
-                filteredSales.map((sale) => {
-                  const itemsCount = (sale.items || []).reduce((acc, item) => acc + Number(item.quantity), 0);
-                  return (
-                    <tr key={sale.id} className="hover:bg-slate-50/70 transition">
-                      <td className="px-5 py-3.5 font-mono text-xs font-semibold text-slate-900">
-                        #{sale.id.slice(0, 8)}
-                      </td>
-                      <td className="px-5 py-3.5 text-xs text-slate-500 whitespace-nowrap">
-                        {formatDate(sale.created_at)}
-                      </td>
-                      <td className="px-5 py-3.5 text-slate-900 font-medium">
-                        {sale.customer_name || <span className="text-slate-400">Walk-in</span>}
-                      </td>
-                      <td className="px-5 py-3.5">
-                        <span className="px-2 py-0.5 rounded-full text-xs font-medium capitalize bg-slate-100 text-slate-700">
-                          {sale.payment_method.replace('_', ' ')}
-                        </span>
-                      </td>
-                      <td className="px-5 py-3.5 text-xs text-slate-500">
-                        {sale.staff_name || 'Staff'}
-                      </td>
-                      <td className="px-5 py-3.5 text-right font-medium text-slate-800">
-                        {itemsCount > 0 ? itemsCount : (sale.items?.length || 1)}
-                      </td>
-                      <td className="px-5 py-3.5 text-right font-bold text-slate-900">
-                        {formatCurrency(sale.total_amount, currency)}
-                      </td>
-                      <td className="px-5 py-3.5 text-center">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (onViewSaleDetail) onViewSaleDetail(sale);
-                            else setViewingSale(sale);
-                          }}
-                          className="inline-flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 font-medium px-2 py-1 rounded hover:bg-blue-50 transition"
-                        >
-                          <FileText className="w-3.5 h-3.5" />
-                          <span>Detail</span>
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
+      {/* Transactions List (Replaced horizontal scrolling table with clickable list items) */}
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-xs divide-y divide-slate-100 overflow-hidden">
+        {filteredSales.length === 0 ? (
+          <div className="px-5 py-16 text-center text-slate-400">
+            <Receipt className="w-10 h-10 mx-auto mb-2 text-slate-300" />
+            <p className="font-semibold text-slate-700">No transactions recorded yet</p>
+            <p className="text-xs text-slate-400 mt-1">Processed register sales will appear here.</p>
+          </div>
+        ) : (
+          filteredSales.map((sale) => {
+            const itemsCount = (sale.items || []).reduce((acc, item) => acc + Number(item.quantity), 0);
+            const totalCount = itemsCount > 0 ? itemsCount : (sale.items?.length || 1);
+
+            return (
+              <div
+                key={sale.id}
+                onClick={() => {
+                  if (onViewSaleDetail) onViewSaleDetail(sale);
+                  else setViewingSale(sale);
+                }}
+                className="p-4 sm:px-6 hover:bg-slate-50/80 transition cursor-pointer flex flex-col sm:flex-row sm:items-center justify-between gap-3 group"
+              >
+                {/* Left: Transaction Info */}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h3 className="font-mono font-bold text-slate-900 group-hover:text-blue-600 transition text-sm sm:text-base">
+                      #{sale.id.slice(0, 8)}
+                    </h3>
+                    <span className="font-semibold text-slate-800 text-sm">
+                      {sale.customer_name || 'Walk-in Customer'}
+                    </span>
+                    <span className="px-2 py-0.5 rounded-full text-xs font-medium capitalize bg-slate-100 text-slate-700">
+                      {sale.payment_method.replace('_', ' ')}
+                    </span>
+                  </div>
+
+                  {/* Unboxed Metadata */}
+                  <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500 mt-1">
+                    <span>{formatDate(sale.created_at)}</span>
+                    <span aria-hidden="true" className="text-slate-300">·</span>
+                    <span>Staff: <strong className="text-slate-700">{sale.staff_name || 'Cashier'}</strong></span>
+                    <span aria-hidden="true" className="text-slate-300">·</span>
+                    <span>{totalCount} {totalCount === 1 ? 'item' : 'items'}</span>
+                  </div>
+                </div>
+
+                {/* Right: Amount & Action */}
+                <div className="flex items-center justify-between sm:justify-end gap-4 shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-100">
+                  <div className="text-left sm:text-right">
+                    <div className="font-bold text-slate-900 font-mono text-base sm:text-lg">
+                      {formatCurrency(sale.total_amount, currency)}
+                    </div>
+                    <div className="text-[11px] text-emerald-600 font-medium">
+                      Completed
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (onViewSaleDetail) onViewSaleDetail(sale);
+                      else setViewingSale(sale);
+                    }}
+                    className="p-2 rounded-xl text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition"
+                    title="View Receipt"
+                  >
+                    <FileText className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            );
+          })
+        )}
       </div>
 
       {/* Transaction Details Modal */}
@@ -237,6 +257,18 @@ export const TransactionsView: React.FC<{ onViewSaleDetail?: (s: Sale) => void }
                   <span>Total Paid:</span>
                   <span className="text-blue-600">{formatCurrency(viewingSale.total_amount, currency)}</span>
                 </div>
+                {viewingSale.payment_method === 'cash' && viewingSale.amount_tendered !== undefined && (
+                  <>
+                    <div className="flex justify-between text-slate-600 pt-1 border-t border-dashed border-slate-200">
+                      <span>Cash Tendered:</span>
+                      <span>{formatCurrency(viewingSale.amount_tendered, currency)}</span>
+                    </div>
+                    <div className="flex justify-between font-bold text-emerald-700">
+                      <span>Change Returned:</span>
+                      <span>{formatCurrency(viewingSale.change_due || 0, currency)}</span>
+                    </div>
+                  </>
+                )}
               </div>
             </div>
 

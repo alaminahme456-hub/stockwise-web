@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { CartItem, NavigationTab, PaymentMethod, Product, Sale } from '../types';
 import { formatCurrency, formatDate } from '../lib/utils';
 import { createSaleWithItems } from '../lib/db';
+import { ExpandableSearch } from './ExpandableSearch';
 import { 
   Search, 
   Plus, 
@@ -21,7 +22,10 @@ import {
   AlertCircle,
   PackageCheck,
   UserPlus,
-  ShoppingBag
+  ShoppingBag,
+  Calculator,
+  Coins,
+  Delete
 } from 'lucide-react';
 
 interface POSViewProps {
@@ -41,6 +45,7 @@ export const POSView: React.FC<POSViewProps> = ({ onNavigate }) => {
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cash');
   const [discountPercent, setDiscountPercent] = useState<number>(0);
   const [notes, setNotes] = useState<string>('');
+  const [cashTendered, setCashTendered] = useState<string>('');
 
   // Processing State
   const [isProcessing, setIsProcessing] = useState(false);
@@ -132,6 +137,7 @@ export const POSView: React.FC<POSViewProps> = ({ onNavigate }) => {
     setCart([]);
     setDiscountPercent(0);
     setNotes('');
+    setCashTendered('');
     setCheckoutError(null);
   };
 
@@ -152,6 +158,58 @@ export const POSView: React.FC<POSViewProps> = ({ onNavigate }) => {
     return Math.max(0, subtotal - discountAmount + taxAmount);
   }, [subtotal, discountAmount, taxAmount]);
 
+  // Cash Tender & Calculator Calculations
+  const tenderedNum = useMemo(() => {
+    const parsed = parseFloat(cashTendered);
+    return isNaN(parsed) ? 0 : parsed;
+  }, [cashTendered]);
+
+  const changeDue = useMemo(() => {
+    if (tenderedNum >= totalAmount) {
+      return Math.round((tenderedNum - totalAmount) * 100) / 100;
+    }
+    return 0;
+  }, [tenderedNum, totalAmount]);
+
+  const amountShort = useMemo(() => {
+    if (totalAmount > tenderedNum) {
+      return Math.round((totalAmount - tenderedNum) * 100) / 100;
+    }
+    return 0;
+  }, [tenderedNum, totalAmount]);
+
+  const handleKeypadPress = (val: string) => {
+    if (val === 'C') {
+      setCashTendered('');
+      return;
+    }
+    if (val === 'BACK') {
+      setCashTendered((prev) => prev.slice(0, -1));
+      return;
+    }
+    if (val === '.') {
+      if (!cashTendered.includes('.')) {
+        setCashTendered((prev) => (prev === '' ? '0.' : prev + '.'));
+      }
+      return;
+    }
+    // Limit decimal precision to 2
+    if (cashTendered.includes('.')) {
+      const parts = cashTendered.split('.');
+      if (parts[1] && parts[1].length >= 2) return;
+    }
+    setCashTendered((prev) => {
+      if (prev === '0') return val;
+      return prev + val;
+    });
+  };
+
+  const handleAddCash = (amountToAdd: number) => {
+    const cur = parseFloat(cashTendered) || 0;
+    const nextVal = (cur + amountToAdd).toFixed(2);
+    setCashTendered(nextVal);
+  };
+
   // Checkout Execution
   const handleCompleteSale = async () => {
     if (!currentStore || cart.length === 0 || isProcessing) return;
@@ -171,6 +229,9 @@ export const POSView: React.FC<POSViewProps> = ({ onNavigate }) => {
     try {
       const selectedCustomer = customers.find((c) => c.id === selectedCustomerId);
       const cashierName = profile?.full_name || user?.email || 'Store Cashier';
+      const isCash = paymentMethod === 'cash';
+      const finalTendered = isCash ? (tenderedNum || totalAmount) : undefined;
+      const finalChange = isCash ? (tenderedNum >= totalAmount ? changeDue : 0) : undefined;
 
       const sale = await createSaleWithItems(
         currentStore.id,
@@ -184,6 +245,8 @@ export const POSView: React.FC<POSViewProps> = ({ onNavigate }) => {
           paymentMethod,
           staffName: cashierName,
           notes: notes || null,
+          amountTendered: finalTendered,
+          changeDue: finalChange,
         },
         cart.map((item) => ({
           productId: item.product.id,
@@ -199,6 +262,8 @@ export const POSView: React.FC<POSViewProps> = ({ onNavigate }) => {
       // Successfully processed sale
       setCompletedSale({
         ...sale,
+        amount_tendered: finalTendered,
+        change_due: finalChange,
         items: cart.map((item) => ({
           id: item.product.id,
           sale_id: sale.id,
@@ -250,25 +315,34 @@ export const POSView: React.FC<POSViewProps> = ({ onNavigate }) => {
           </div>
         </div>
 
-        {/* Quick navigation pill back to other sections on mobile */}
-        {onNavigate && (
-          <div className="flex items-center gap-1.5 lg:hidden">
-            <button
-              type="button"
-              onClick={() => onNavigate('products')}
-              className="px-2.5 py-1 text-xs font-medium text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 shadow-xs cursor-pointer"
-            >
-              Products
-            </button>
-            <button
-              type="button"
-              onClick={() => onNavigate('transactions')}
-              className="px-2.5 py-1 text-xs font-medium text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 shadow-xs cursor-pointer"
-            >
-              Sales
-            </button>
-          </div>
-        )}
+        <div className="flex items-center gap-2 self-end sm:self-auto">
+          {/* Expandable Search Button in Top Right Corner */}
+          <ExpandableSearch
+            value={searchQuery}
+            onChange={setSearchQuery}
+            placeholder="Search products by name or SKU..."
+          />
+
+          {/* Quick navigation pill back to other sections on mobile */}
+          {onNavigate && (
+            <div className="flex items-center gap-1.5 lg:hidden">
+              <button
+                type="button"
+                onClick={() => onNavigate('products')}
+                className="px-2.5 py-1 text-xs font-medium text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 shadow-xs cursor-pointer"
+              >
+                Products
+              </button>
+              <button
+                type="button"
+                onClick={() => onNavigate('transactions')}
+                className="px-2.5 py-1 text-xs font-medium text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 shadow-xs cursor-pointer"
+              >
+                Sales
+              </button>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* POS Grid: Catalog on left, Cart & Checkout on right */}
@@ -276,29 +350,36 @@ export const POSView: React.FC<POSViewProps> = ({ onNavigate }) => {
         
         {/* LEFT / MAIN: Product Catalog (7 cols on lg) */}
         <div className="lg:col-span-7 space-y-4">
-          {/* Search & Category filter */}
+          {/* Category filter */}
           <div className="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-xs space-y-2.5">
-            <div className="flex flex-col sm:flex-row gap-3">
-              <div className="relative flex-1">
-                <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                <input
-                  type="text"
-                  placeholder="Search products by name or SKU..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full pl-10 pr-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-blue-500 transition"
-                />
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2 flex-1">
+                <span className="text-xs font-semibold text-slate-500">Category:</span>
+                <select
+                  value={selectedCategory}
+                  onChange={(e) => setSelectedCategory(e.target.value)}
+                  className="text-xs font-semibold px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-700 focus:outline-none focus:border-blue-500"
+                >
+                  <option value="all">All Categories</option>
+                  {categories.map((c) => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
               </div>
-              <select
-                value={selectedCategory}
-                onChange={(e) => setSelectedCategory(e.target.value)}
-                className="text-xs font-semibold px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-700 focus:outline-none focus:border-blue-500"
-              >
-                <option value="all">All Categories</option>
-                {categories.map((c) => (
-                  <option key={c.id} value={c.id}>{c.name}</option>
-                ))}
-              </select>
+
+              {searchQuery && (
+                <div className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-blue-50 border border-blue-200 text-blue-700 text-xs font-semibold rounded-lg">
+                  <span className="truncate max-w-[120px] sm:max-w-[200px]">"{searchQuery}"</span>
+                  <button
+                    type="button"
+                    onClick={() => setSearchQuery('')}
+                    className="hover:text-blue-900 cursor-pointer"
+                    title="Clear search"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </div>
+              )}
             </div>
 
             {/* Quick Filter Horizontal Chips */}
@@ -544,6 +625,152 @@ export const POSView: React.FC<POSViewProps> = ({ onNavigate }) => {
             </div>
           </div>
 
+          {/* Cash Payment Calculator Interface */}
+          {paymentMethod === 'cash' && (
+            <div className="px-4 py-3 border-t border-slate-200 bg-blue-50/20 space-y-2.5">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5 text-xs font-bold text-slate-800">
+                  <Calculator className="w-4 h-4 text-blue-600" />
+                  <span>Cash Tendered &amp; Change Calculator</span>
+                </div>
+                {cashTendered && (
+                  <button
+                    type="button"
+                    onClick={() => setCashTendered('')}
+                    className="text-[11px] font-medium text-slate-500 hover:text-red-600 transition"
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
+
+              {/* Amount Tendered Input */}
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                  Amount Tendered by Customer
+                </label>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-sm">
+                    {currency === 'USD' ? '$' : currency}
+                  </span>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    placeholder="0.00"
+                    value={cashTendered}
+                    onFocus={(e) => {
+                      if (e.target.value === '0' || e.target.value === '0.00') {
+                        setCashTendered('');
+                      }
+                    }}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (/^\d*\.?\d{0,2}$/.test(val) || val === '') {
+                        setCashTendered(val);
+                      }
+                    }}
+                    className="w-full pl-8 pr-16 py-2 bg-white border border-slate-300 rounded-xl text-lg font-bold font-mono text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setCashTendered(totalAmount.toFixed(2))}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-semibold rounded-lg transition"
+                    title="Set Exact Total"
+                  >
+                    Exact
+                  </button>
+                </div>
+              </div>
+
+              {/* Quick Cash Presets */}
+              <div className="flex flex-wrap gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setCashTendered(totalAmount.toFixed(2))}
+                  className="px-2.5 py-1 text-xs font-semibold rounded-lg bg-white border border-slate-200 hover:bg-blue-50 hover:border-blue-300 hover:text-blue-700 transition"
+                >
+                  Exact ({formatCurrency(totalAmount, currency)})
+                </button>
+                {[5, 10, 20, 50, 100].map((denomination) => {
+                  const roundVal = Math.ceil(totalAmount / denomination) * denomination;
+                  if (roundVal > totalAmount && roundVal <= totalAmount + denomination * 2) {
+                    return (
+                      <button
+                        key={roundVal}
+                        type="button"
+                        onClick={() => setCashTendered(roundVal.toFixed(2))}
+                        className="px-2 py-1 text-xs font-semibold rounded-lg bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 transition"
+                      >
+                        ${roundVal}
+                      </button>
+                    );
+                  }
+                  return null;
+                }).filter(Boolean).slice(0, 3)}
+              </div>
+
+              {/* On-Screen Calculator Keypad */}
+              <div className="grid grid-cols-4 gap-1 pt-1">
+                {['1', '2', '3', '+5', '4', '5', '6', '+10', '7', '8', '9', '+20', 'C', '0', '.', '⌫'].map((key) => {
+                  const isQuickAdd = key.startsWith('+');
+                  const isAction = key === 'C' || key === '⌫';
+                  return (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => {
+                        if (isQuickAdd) {
+                          handleAddCash(parseInt(key.replace('+', ''), 10));
+                        } else if (key === '⌫') {
+                          handleKeypadPress('BACK');
+                        } else {
+                          handleKeypadPress(key);
+                        }
+                      }}
+                      className={`py-1.5 text-xs font-bold rounded-lg border transition ${
+                        isQuickAdd 
+                          ? 'bg-blue-50 border-blue-200 text-blue-700 hover:bg-blue-100'
+                          : isAction
+                          ? 'bg-slate-100 border-slate-200 text-slate-700 hover:bg-slate-200'
+                          : 'bg-white border-slate-200 text-slate-800 hover:bg-slate-50'
+                      }`}
+                    >
+                      {key}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Change Due / Remaining Automatic Calculation */}
+              <div className="pt-2 border-t border-slate-200/80">
+                {tenderedNum >= totalAmount ? (
+                  <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center justify-between">
+                    <div className="flex items-center gap-1.5 text-emerald-800 font-semibold text-xs">
+                      <Coins className="w-4 h-4 text-emerald-600" />
+                      <span>Change Due to Customer:</span>
+                    </div>
+                    <span className="text-base font-bold font-mono text-emerald-700">
+                      {formatCurrency(changeDue, currency)}
+                    </span>
+                  </div>
+                ) : tenderedNum > 0 ? (
+                  <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200 flex items-center justify-between">
+                    <div className="text-amber-800 font-semibold text-xs">
+                      <span>Remaining to Pay:</span>
+                    </div>
+                    <span className="text-sm font-bold font-mono text-amber-700">
+                      {formatCurrency(amountShort, currency)}
+                    </span>
+                  </div>
+                ) : (
+                  <div className="text-[11px] text-slate-500 text-center py-1">
+                    Enter customer's cash to calculate change automatically
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
           {/* Order Totals & Discount Calculation */}
           <div className="p-4 border-t border-slate-200 space-y-2 bg-slate-50/50 text-xs pb-32 sm:pb-8">
             <div className="flex justify-between text-slate-600">
@@ -674,6 +901,18 @@ export const POSView: React.FC<POSViewProps> = ({ onNavigate }) => {
                   <span>TOTAL PAID:</span>
                   <span>{formatCurrency(completedSale.total_amount, currency)}</span>
                 </div>
+                {completedSale.payment_method === 'cash' && completedSale.amount_tendered !== undefined && (
+                  <>
+                    <div className="flex justify-between text-[11px] text-slate-600 pt-1 border-t border-dotted border-slate-200">
+                      <span>Cash Tendered:</span>
+                      <span>{formatCurrency(completedSale.amount_tendered, currency)}</span>
+                    </div>
+                    <div className="flex justify-between text-[11px] font-bold text-emerald-700">
+                      <span>Change Returned:</span>
+                      <span>{formatCurrency(completedSale.change_due || 0, currency)}</span>
+                    </div>
+                  </>
+                )}
               </div>
 
               <div className="text-center pt-3 text-[10px] text-slate-500 border-t border-dashed border-slate-300">

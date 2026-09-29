@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useStore } from '../context/StoreContext';
+import { useToast } from '../context/ToastContext';
 import { Customer, Sale, CustomerPayment, CustomerLedgerEntry } from '../types';
 import { createCustomer, updateCustomer, deleteCustomer, calculateCustomerCreditLedger } from '../lib/db';
 import { formatCurrency, formatDate } from '../lib/utils';
@@ -50,6 +51,7 @@ export const CustomersView: React.FC<CustomersViewProps> = ({
     deleteCustomerPayment,
     refreshStoreData 
   } = useStore();
+  const { showToast } = useToast();
 
   const [searchQuery, setSearchQuery] = useState('');
   const [filterTab, setFilterTab] = useState<'all' | 'debt' | 'paid'>('all');
@@ -207,9 +209,10 @@ export const CustomersView: React.FC<CustomersViewProps> = ({
       if (viewingCustomer?.id === deletingCustomer.id) {
         setViewingCustomer(null);
       }
+      showToast(`✓ Customer "${deletingCustomer.name}" deleted`, 'info');
       await refreshStoreData();
     } catch (err: any) {
-      alert(`Could not delete customer: ${err?.message}`);
+      showToast(err?.message ? `Could not delete customer: ${err.message}` : 'Could not delete customer. Please try again.', 'error');
     }
   };
 
@@ -266,13 +269,12 @@ export const CustomersView: React.FC<CustomersViewProps> = ({
   };
 
   const handleVoidPayment = async (paymentId: string) => {
-    if (!window.confirm('Are you sure you want to void this repayment transaction? This will recalculate the customer debt ledger.')) {
-      return;
-    }
     try {
       await deleteCustomerPayment(paymentId);
+      showToast('✓ Repayment voided successfully. Debt ledger updated.', 'info');
+      await refreshStoreData();
     } catch (err: any) {
-      alert(`Could not void payment: ${err?.message}`);
+      showToast(err?.message ? `Could not void payment: ${err.message}` : 'Could not void payment. Please try again.', 'error');
     }
   };
 
@@ -777,29 +779,52 @@ export const CustomersView: React.FC<CustomersViewProps> = ({
               return (
                 <form onSubmit={handleSubmitRepayment} className="mt-4 space-y-4">
                   {/* Current Balance Banner */}
-                  <div className="p-3.5 rounded-2xl bg-amber-50/70 border border-amber-200 flex items-center justify-between">
+                  <div className="p-4 rounded-2xl bg-amber-50/80 border border-amber-200 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                     <div>
-                      <span className="text-[11px] font-semibold text-amber-800 uppercase tracking-wider">Current Debt Balance</span>
-                      <div className="text-xl font-black text-amber-950 font-mono mt-0.5">
+                      <span className="text-[11px] font-bold text-amber-800 uppercase tracking-wider">Outstanding</span>
+                      <div className="text-2xl font-black text-amber-950 font-mono tabular-nums mt-0.5">
                         {formatCurrency(currentOutstanding, currency)}
                       </div>
                     </div>
-                    {currentOutstanding > 0 && (
+
+                    {/* Dual Action Options (Principle 1 & 13: Smart Defaults & Contrast) */}
+                    <div className="flex items-center gap-2">
                       <button
                         type="button"
                         onClick={() => setRepaymentAmount(currentOutstanding.toString())}
-                        className="px-3 py-1.5 text-xs font-bold text-amber-900 bg-amber-200/80 hover:bg-amber-200 rounded-xl transition cursor-pointer"
+                        className={`px-3 py-1.5 text-xs font-bold rounded-xl transition cursor-pointer flex items-center gap-1 ${
+                          parseFloat(repaymentAmount) === currentOutstanding && currentOutstanding > 0
+                            ? 'bg-emerald-600 text-white shadow-xs'
+                            : 'bg-amber-200/90 hover:bg-amber-300 text-amber-950'
+                        }`}
                       >
-                        Pay Full Balance
+                        <Check className="w-3.5 h-3.5" />
+                        <span>Pay Full Balance</span>
                       </button>
-                    )}
+                      <button
+                        type="button"
+                        onClick={() => setRepaymentAmount('')}
+                        className={`px-3 py-1.5 text-xs font-semibold rounded-xl transition cursor-pointer border ${
+                          parseFloat(repaymentAmount) !== currentOutstanding || !repaymentAmount
+                            ? 'bg-white border-slate-300 text-slate-800'
+                            : 'bg-slate-100 border-slate-200 text-slate-600 hover:bg-slate-200'
+                        }`}
+                      >
+                        Enter Partial Payment
+                      </button>
+                    </div>
                   </div>
 
                   {/* Payment Amount Input */}
                   <div>
                     <div className="flex items-center justify-between mb-1">
                       <label className="block text-xs font-semibold text-slate-700">
-                        Repayment Amount *
+                        Payment amount *
+                        {parseFloat(repaymentAmount) === currentOutstanding && currentOutstanding > 0 && (
+                          <span className="ml-1.5 text-[11px] font-normal text-emerald-600">
+                            ← pre-filled
+                          </span>
+                        )}
                       </label>
                       {repaymentAmount && (
                         <button
@@ -812,7 +837,7 @@ export const CustomersView: React.FC<CustomersViewProps> = ({
                       )}
                     </div>
                     <div className="relative">
-                      <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm font-bold text-slate-400">
+                      <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm font-bold text-slate-400 font-mono">
                         {currency === 'NGN' ? '₦' : currency === 'USD' ? '$' : currency}
                       </span>
                       <input
@@ -827,9 +852,29 @@ export const CustomersView: React.FC<CustomersViewProps> = ({
                             setRepaymentAmount(val);
                           }
                         }}
-                        className="w-full pl-10 pr-3.5 py-2.5 text-base font-bold font-mono bg-slate-50 border border-slate-300 rounded-xl focus:outline-none focus:border-emerald-500 focus:bg-white text-slate-900"
+                        className="w-full pl-10 pr-3.5 py-2.5 text-base font-bold font-mono tabular-nums bg-slate-50 border border-slate-300 rounded-xl focus:outline-none focus:border-emerald-500 focus:bg-white text-slate-900"
                       />
                     </div>
+
+                    {/* Quick Partial Percentage Chips */}
+                    {currentOutstanding > 0 && (
+                      <div className="flex items-center gap-1.5 mt-2">
+                        <span className="text-[11px] text-slate-400">Quick partial:</span>
+                        {[0.25, 0.5, 0.75].map((pct) => {
+                          const val = Math.round(currentOutstanding * pct * 100) / 100;
+                          return (
+                            <button
+                              key={pct}
+                              type="button"
+                              onClick={() => setRepaymentAmount(val.toString())}
+                              className="px-2 py-0.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-semibold transition cursor-pointer"
+                            >
+                              {pct * 100}% ({formatCurrency(val, currency)})
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
 
                   {/* Live Remaining Balance Calculation Preview */}

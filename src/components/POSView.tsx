@@ -1,6 +1,7 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useStore } from '../context/StoreContext';
 import { useAuth } from '../context/AuthContext';
+import { useToast } from '../context/ToastContext';
 import { CartItem, NavigationTab, PaymentMethod, Product, Sale } from '../types';
 import { formatCurrency, formatDate } from '../lib/utils';
 import { createSaleWithItems } from '../lib/db';
@@ -36,9 +37,16 @@ interface POSViewProps {
 export const POSView: React.FC<POSViewProps> = ({ onNavigate }) => {
   const { currentStore, products, categories, customers, settings, refreshStoreData } = useStore();
   const { user, profile } = useAuth();
+  const { showToast } = useToast();
 
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
+
+  // Auto-focus search on load (Principle 1 & 14: POS Experience)
+  useEffect(() => {
+    searchInputRef.current?.focus();
+  }, []);
 
   // Cart State
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -193,6 +201,35 @@ export const POSView: React.FC<POSViewProps> = ({ onNavigate }) => {
     return Math.max(0, Math.round((totalAmount - creditUpfrontNum) * 100) / 100);
   }, [totalAmount, creditUpfrontNum]);
 
+  // Quick cash chips for speed (Smart Defaults - Principle 1 & 14)
+  const quickCashAmounts = useMemo(() => {
+    if (currency === 'NGN') {
+      return [
+        { label: 'Exact', amount: totalAmount },
+        { label: '+₦500', amount: (tenderedNum || totalAmount) + 500 },
+        { label: '+₦1,000', amount: (tenderedNum || totalAmount) + 1000 },
+        { label: '+₦2,000', amount: (tenderedNum || totalAmount) + 2000 },
+        { label: '+₦5,000', amount: (tenderedNum || totalAmount) + 5000 },
+        { label: '+₦10,000', amount: (tenderedNum || totalAmount) + 10000 },
+      ];
+    }
+    return [
+      { label: 'Exact', amount: totalAmount },
+      { label: '+$10', amount: (tenderedNum || totalAmount) + 10 },
+      { label: '+$20', amount: (tenderedNum || totalAmount) + 20 },
+      { label: '+$50', amount: (tenderedNum || totalAmount) + 50 },
+      { label: '+$100', amount: (tenderedNum || totalAmount) + 100 },
+    ];
+  }, [currency, totalAmount, tenderedNum]);
+
+  const handleStartNewSale = () => {
+    setCompletedSale(null);
+    clearCart();
+    setTimeout(() => {
+      searchInputRef.current?.focus();
+    }, 100);
+  };
+
   // Checkout Execution
   const handleCompleteSale = async () => {
     if (!currentStore || cart.length === 0 || isProcessing) return;
@@ -283,6 +320,7 @@ export const POSView: React.FC<POSViewProps> = ({ onNavigate }) => {
       // Clear register cart
       clearCart();
       await refreshStoreData();
+      showToast(`✓ Sale #${sale.id.slice(0, 8)} completed successfully! Total: ${formatCurrency(totalAmount, currency)}`, 'success');
     } catch (err: any) {
       console.error('POS sale checkout error:', err);
       setCheckoutError(err?.message || 'Transaction could not be completed. Please retry.');
@@ -294,6 +332,42 @@ export const POSView: React.FC<POSViewProps> = ({ onNavigate }) => {
   const handlePrintReceipt = () => {
     window.print();
   };
+
+  // Keyboard Shortcuts (Principle 12: Cognitive Load & Cashier Speed)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const activeEl = document.activeElement;
+      const isInputActive = activeEl instanceof HTMLInputElement || activeEl instanceof HTMLTextAreaElement || activeEl instanceof HTMLSelectElement;
+
+      // '/' to focus search (when not inside an input)
+      if (e.key === '/' && !isInputActive) {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+        return;
+      }
+
+      // 'Escape' to dismiss receipt modal or clear search query
+      if (e.key === 'Escape') {
+        if (completedSale) {
+          handleStartNewSale();
+        } else if (searchQuery) {
+          setSearchQuery('');
+        }
+        return;
+      }
+
+      // 'Ctrl+Enter' or 'Cmd+Enter' to complete checkout immediately
+      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+        if (cart.length > 0 && !isProcessing && !completedSale) {
+          e.preventDefault();
+          handleCompleteSale();
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [completedSale, searchQuery, cart, isProcessing]);
 
   return (
     <div className="space-y-4 pb-32 lg:pb-8">
@@ -353,7 +427,34 @@ export const POSView: React.FC<POSViewProps> = ({ onNavigate }) => {
         {/* LEFT / MAIN: Product Catalog (7 cols on lg) */}
         <div className="lg:col-span-7 space-y-4">
           {/* Category filter */}
-          <div className="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-xs space-y-2.5">
+          <div className="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-xs space-y-3">
+            {/* Prominent Instant Search Bar (Principle 1 & 14) */}
+            <div className="relative w-full">
+              <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+              <input
+                ref={searchInputRef}
+                type="text"
+                placeholder="Search products by name, SKU, or barcode (Press Enter to add)..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && availableProducts.length > 0) {
+                    addToCart(availableProducts[0]);
+                  }
+                }}
+                className="w-full pl-10 pr-9 py-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-blue-500 focus:bg-white text-slate-900 font-medium transition"
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+
             <div className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-2 flex-1">
                 <span className="text-xs font-semibold text-slate-500">Category:</span>
@@ -368,20 +469,6 @@ export const POSView: React.FC<POSViewProps> = ({ onNavigate }) => {
                   ))}
                 </select>
               </div>
-
-              {searchQuery && (
-                <div className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-blue-50 border border-blue-200 text-blue-700 text-xs font-semibold rounded-lg">
-                  <span className="truncate max-w-[120px] sm:max-w-[200px]">"{searchQuery}"</span>
-                  <button
-                    type="button"
-                    onClick={() => setSearchQuery('')}
-                    className="hover:text-blue-900 cursor-pointer"
-                    title="Clear search"
-                  >
-                    <X className="w-3 h-3" />
-                  </button>
-                </div>
-              )}
             </div>
 
             {/* Quick Filter Horizontal Chips */}
@@ -712,6 +799,20 @@ export const POSView: React.FC<POSViewProps> = ({ onNavigate }) => {
                 />
               </div>
 
+              {/* Quick Cash Denomination Chips (Smart Defaults & Speed - Principle 1 & 14) */}
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar text-xs">
+                {quickCashAmounts.map((q, idx) => (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => setCashTendered(q.amount.toFixed(2))}
+                    className="px-2.5 py-1 rounded-lg bg-white border border-slate-200 hover:border-blue-400 hover:bg-blue-50 text-slate-700 font-mono font-semibold transition shrink-0 cursor-pointer active:scale-95"
+                  >
+                    {q.label}
+                  </button>
+                ))}
+              </div>
+
               {/* Automatic Change Calculation Display */}
               {tenderedNum >= totalAmount && totalAmount > 0 ? (
                 <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center justify-between">
@@ -869,6 +970,14 @@ export const POSView: React.FC<POSViewProps> = ({ onNavigate }) => {
                 </>
               )}
             </button>
+
+            {/* Microinteraction Keyboard Shortcuts Helper */}
+            <div className="hidden sm:flex items-center justify-center gap-3 pt-2 text-[10px] text-slate-400 font-medium select-none">
+              <span><kbd className="px-1.5 py-0.5 rounded bg-slate-100 border border-slate-200 text-slate-600 font-mono">/</kbd> Search</span>
+              <span><kbd className="px-1.5 py-0.5 rounded bg-slate-100 border border-slate-200 text-slate-600 font-mono">↵</kbd> Add item</span>
+              <span><kbd className="px-1.5 py-0.5 rounded bg-slate-100 border border-slate-200 text-slate-600 font-mono">Ctrl+↵</kbd> Pay</span>
+              <span><kbd className="px-1.5 py-0.5 rounded bg-slate-100 border border-slate-200 text-slate-600 font-mono">Esc</kbd> Reset</span>
+            </div>
           </div>
         </div>
       </div>
@@ -992,10 +1101,11 @@ export const POSView: React.FC<POSViewProps> = ({ onNavigate }) => {
               </button>
               <button
                 type="button"
-                onClick={() => setCompletedSale(null)}
-                className="flex-1 py-2 px-3 text-xs font-semibold rounded-xl bg-blue-600 hover:bg-blue-500 text-white transition"
+                onClick={handleStartNewSale}
+                className="flex-1 py-2.5 px-3 text-xs font-bold rounded-xl bg-blue-600 hover:bg-blue-500 text-white flex items-center justify-center gap-1.5 transition shadow-md shadow-blue-500/20 cursor-pointer"
               >
-                New Transaction
+                <Plus className="w-4 h-4" />
+                <span>Start New Sale</span>
               </button>
             </div>
           </div>

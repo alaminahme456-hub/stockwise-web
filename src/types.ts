@@ -246,6 +246,7 @@ export interface StoreSettings {
   tax_rate: number;
   currency: string;
   low_stock_threshold_default?: number;
+  daily_sales_target?: number | null;
 }
 
 export interface CartItem {

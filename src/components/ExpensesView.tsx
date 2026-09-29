@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { useStore } from '../context/StoreContext';
 import { useAuth } from '../context/AuthContext';
+import { useToast } from '../context/ToastContext';
 import { Expense } from '../types';
 import { createExpense, updateExpense, deleteExpense } from '../lib/db';
 import { formatCurrency, formatDate } from '../lib/utils';
@@ -33,6 +34,7 @@ const EXPENSE_CATEGORIES = [
 export const ExpensesView: React.FC = () => {
   const { currentStore, expenses, refreshStoreData } = useStore();
   const { user } = useAuth();
+  const { showToast } = useToast();
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
@@ -127,6 +129,7 @@ export const ExpensesView: React.FC = () => {
         setIsAddModalOpen(false);
       }
       await refreshStoreData();
+      showToast(editingExpense ? `✓ Expense "${formData.title}" updated` : `✓ Expense "${formData.title}" recorded`, 'success');
     } catch (err: any) {
       setErrorMsg(err?.message || 'Failed to save expense entry.');
     } finally {
@@ -138,10 +141,11 @@ export const ExpensesView: React.FC = () => {
     if (!deletingExpense) return;
     try {
       await deleteExpense(deletingExpense.id);
+      showToast(`✓ Expense "${deletingExpense.title}" deleted`, 'info');
       setDeletingExpense(null);
       await refreshStoreData();
     } catch (err: any) {
-      alert(`Could not delete expense: ${err?.message}`);
+      showToast(err?.message ? `Could not delete expense: ${err.message}` : 'Could not delete expense. Please try again.', 'error');
     }
   };
 

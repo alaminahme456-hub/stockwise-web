@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { StoreProvider, useStore } from './context/StoreContext';
+import { ToastProvider, useToast } from './context/ToastContext';
 import { AuthModal } from './components/AuthModal';
 import { Navbar } from './components/Navbar';
 import { Sidebar } from './components/Sidebar';
@@ -36,6 +37,7 @@ import { formatCurrency } from './lib/utils';
 
 const MainAppLayout: React.FC = () => {
   const { user, loading: authLoading, signOut } = useAuth();
+  const { showToast } = useToast();
   const { 
     currentStore, 
     stores, 
@@ -54,6 +56,15 @@ const MainAppLayout: React.FC = () => {
   const [currentTab, setCurrentTab] = useState<NavigationTab>('dashboard');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [selectedCustomerIdForProfile, setSelectedCustomerIdForProfile] = useState<string | null>(null);
+
+  // Cashier landing tab optimization (Principle 17: Staff UX)
+  React.useEffect(() => {
+    if (currentMember && (currentMember.role === 'cashier' || currentMember.role === 'sales_staff')) {
+      if (!hasPermission('dashboard.view')) {
+        setCurrentTab('pos');
+      }
+    }
+  }, [currentMember, hasPermission]);
 
   // Global invitation token state (from URL search, hash, pathname or in-app testing)
   const [activeInviteToken, setActiveInviteToken] = useState<string | null>(() => {
@@ -389,8 +400,9 @@ const MainAppLayout: React.FC = () => {
       setCurrentStore(store);
       setCreateStoreOpen(false);
       setNewStoreName('');
+      showToast(`✓ Store "${store.name}" created successfully!`, 'success');
     } catch (err: any) {
-      alert(`Could not create store: ${err?.message}`);
+      showToast(err?.message ? `Could not create store: ${err.message}` : 'Could not create store. Please try again.', 'error');
     } finally {
       setCreatingStore(false);
     }
@@ -680,7 +692,9 @@ export default function App() {
   return (
     <AuthProvider>
       <StoreProvider>
-        <MainAppLayout />
+        <ToastProvider>
+          <MainAppLayout />
+        </ToastProvider>
       </StoreProvider>
     </AuthProvider>
   );

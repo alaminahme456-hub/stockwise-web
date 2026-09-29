@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { useStore } from '../context/StoreContext';
 import { useAuth } from '../context/AuthContext';
+import { useToast } from '../context/ToastContext';
 import { StoreMember, StaffInvitation, StaffActivity } from '../types';
 import { 
   ALL_PERMISSIONS, 
@@ -63,6 +64,7 @@ export const StaffView: React.FC<StaffViewProps> = ({ onOpenInvitationToken }) =
     refreshStoreData 
   } = useStore();
   const { user } = useAuth();
+  const { showToast } = useToast();
 
   // Active top tab: directory vs activity log
   const [activeTab, setActiveTab] = useState<'roster' | 'activity'>('roster');
@@ -213,18 +215,19 @@ export const StaffView: React.FC<StaffViewProps> = ({ onOpenInvitationToken }) =
     try {
       const updated = await resendInvite(invitationId);
       setPreviewEmailInv(updated);
+      showToast('✓ Staff invitation resent', 'success');
     } catch (err: any) {
-      alert(`Could not resend invitation: ${err?.message}`);
+      showToast(err?.message ? `Could not resend invitation: ${err.message}` : 'Could not resend invitation. Please try again.', 'error');
     }
   };
 
   // Cancel invitation handler
   const handleCancelInvite = async (invitationId: string) => {
-    if (!confirm('Are you sure you want to cancel this pending invitation?')) return;
     try {
       await cancelInvite(invitationId);
+      showToast('✓ Invitation cancelled', 'info');
     } catch (err: any) {
-      alert(`Could not cancel invitation: ${err?.message}`);
+      showToast(err?.message ? `Could not cancel invitation: ${err.message}` : 'Could not cancel invitation. Please try again.', 'error');
     }
   };
 
@@ -249,8 +252,9 @@ export const StaffView: React.FC<StaffViewProps> = ({ onOpenInvitationToken }) =
           permissions: editPerms,
         });
       }
+      showToast(`✓ Permissions updated for ${editingPermissionsMember.user_name || 'staff member'}`, 'success');
     } catch (err: any) {
-      alert(`Failed to update permissions: ${err?.message}`);
+      showToast(err?.message ? `Failed to update permissions: ${err.message}` : 'Failed to update permissions. Please try again.', 'error');
     } finally {
       setUpdatingPermsLoading(false);
     }
@@ -261,12 +265,13 @@ export const StaffView: React.FC<StaffViewProps> = ({ onOpenInvitationToken }) =
     if (!suspendingMember) return;
     try {
       await suspendStaff(suspendingMember.id);
+      showToast(`✓ Staff member suspended`, 'info');
       setSuspendingMember(null);
       if (viewingMember?.id === suspendingMember.id) {
         setViewingMember({ ...viewingMember, status: 'suspended' });
       }
     } catch (err: any) {
-      alert(`Could not suspend staff member: ${err?.message}`);
+      showToast(err?.message ? `Could not suspend staff member: ${err.message}` : 'Could not suspend staff member. Please try again.', 'error');
     }
   };
 
@@ -274,11 +279,12 @@ export const StaffView: React.FC<StaffViewProps> = ({ onOpenInvitationToken }) =
   const handleReactivate = async (memberId: string) => {
     try {
       await reactivateStaff(memberId);
+      showToast(`✓ Staff member reactivated`, 'success');
       if (viewingMember?.id === memberId) {
         setViewingMember({ ...viewingMember, status: 'active' });
       }
     } catch (err: any) {
-      alert(`Could not reactivate staff member: ${err?.message}`);
+      showToast(err?.message ? `Could not reactivate staff member: ${err.message}` : 'Could not reactivate staff member. Please try again.', 'error');
     }
   };
 
@@ -287,12 +293,13 @@ export const StaffView: React.FC<StaffViewProps> = ({ onOpenInvitationToken }) =
     if (!removingMember) return;
     try {
       await removeStaff(removingMember.id);
+      showToast(`✓ Staff member removed`, 'info');
       setRemovingMember(null);
       if (viewingMember?.id === removingMember.id) {
         setViewingMember(null);
       }
     } catch (err: any) {
-      alert(`Could not remove staff member: ${err?.message}`);
+      showToast(err?.message ? `Could not remove staff member: ${err.message}` : 'Could not remove staff member. Please try again.', 'error');
     }
   };
 

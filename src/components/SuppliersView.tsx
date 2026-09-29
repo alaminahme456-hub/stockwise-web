@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { useStore } from '../context/StoreContext';
+import { useToast } from '../context/ToastContext';
 import { Supplier } from '../types';
 import { createSupplier, updateSupplier, deleteSupplier } from '../lib/db';
 import { ExpandableSearch } from './ExpandableSearch';
@@ -20,6 +21,7 @@ import {
 
 export const SuppliersView: React.FC = () => {
   const { currentStore, suppliers, products, refreshStoreData } = useStore();
+  const { showToast } = useToast();
 
   const [searchQuery, setSearchQuery] = useState('');
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -85,6 +87,7 @@ export const SuppliersView: React.FC = () => {
         setIsAddModalOpen(false);
       }
       await refreshStoreData();
+      showToast(editingSupplier ? `✓ Supplier "${formData.name}" updated` : `✓ Supplier "${formData.name}" added`, 'success');
     } catch (err: any) {
       setErrorMsg(err?.message || 'Failed to save supplier details.');
     } finally {
@@ -96,10 +99,11 @@ export const SuppliersView: React.FC = () => {
     if (!deletingSupplier) return;
     try {
       await deleteSupplier(deletingSupplier.id);
+      showToast(`✓ Supplier "${deletingSupplier.name}" deleted`, 'info');
       setDeletingSupplier(null);
       await refreshStoreData();
     } catch (err: any) {
-      alert(`Could not delete supplier: ${err?.message}`);
+      showToast(err?.message ? `Could not delete supplier: ${err.message}` : 'Could not delete supplier. Please try again.', 'error');
     }
   };
 

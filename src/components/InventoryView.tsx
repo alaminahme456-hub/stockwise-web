@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useStore } from '../context/StoreContext';
 import { useAuth } from '../context/AuthContext';
+import { useToast } from '../context/ToastContext';
 import { formatCurrency, formatDate } from '../lib/utils';
 import { adjustInventory } from '../lib/db';
 import { InventoryMovement, MovementType, Product } from '../types';
@@ -26,6 +27,7 @@ import {
 export const InventoryView: React.FC = () => {
   const { currentStore, products, categories, inventoryMovements, refreshStoreData } = useStore();
   const { user, profile } = useAuth();
+  const { showToast } = useToast();
 
   const [activeTab, setActiveTab] = useState<'levels' | 'history'>('levels');
   const [searchQuery, setSearchQuery] = useState('');
@@ -88,6 +90,8 @@ export const InventoryView: React.FC = () => {
       );
 
       await refreshStoreData();
+      const sign = (adjustType === 'addition' || adjustType === 'restock') ? '+' : '-';
+      showToast(`✓ Stock adjusted for "${adjustingProduct.name}" (${sign}${adjustQuantity} ${adjustingProduct.unit || 'units'})`, 'success');
       setAdjustingProduct(null);
     } catch (err: any) {
       setAdjustError(err?.message || 'Failed to apply inventory adjustment.');

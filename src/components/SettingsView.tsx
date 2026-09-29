@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useStore } from '../context/StoreContext';
 import { useAuth } from '../context/AuthContext';
+import { useToast } from '../context/ToastContext';
 import { updateStore, updateStoreSettings, createStore } from '../lib/db';
 import { getSupabaseCredentials } from '../lib/supabase';
 import { 
@@ -22,6 +23,7 @@ import { Store } from '../types';
 export const SettingsView: React.FC = () => {
   const { currentStore, settings, stores, setCurrentStore, refreshStoreData, refreshStores } = useStore();
   const { user } = useAuth();
+  const { showToast } = useToast();
 
   // Store profile form
   const [storeForm, setStoreForm] = useState({
@@ -133,10 +135,11 @@ export const SettingsView: React.FC = () => {
       await refreshStores();
       await refreshStoreData();
       setCurrentStore(created);
+      showToast(`✓ New branch "${created.name}" created and set as active store.`, 'success');
       setSwitchSuccessMessage(`New branch "${created.name}" created and set as active store.`);
       setTimeout(() => setSwitchSuccessMessage(null), 4000);
     } catch (err: any) {
-      alert(`Could not create store: ${err?.message}`);
+      showToast(err?.message ? `Could not create store: ${err.message}` : 'Could not create store. Please try again.', 'error');
     } finally {
       setSaving(false);
     }

@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { useStore } from '../context/StoreContext';
 import { useAuth } from '../context/AuthContext';
+import { useToast } from '../context/ToastContext';
 import { Product } from '../types';
 import { createProduct, updateProduct, deleteProduct, createCategory } from '../lib/db';
 import { formatCurrency, formatDate } from '../lib/utils';
@@ -25,6 +26,7 @@ import {
 export const ProductsView: React.FC = () => {
   const { currentStore, products, categories, suppliers, refreshStoreData } = useStore();
   const { user } = useAuth();
+  const { showToast } = useToast();
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
@@ -105,13 +107,18 @@ export const ProductsView: React.FC = () => {
   }, [products, searchQuery, selectedCategory, selectedStockStatus, sortField, sortOrder]);
 
   const handleOpenAdd = () => {
+    const storedCat = typeof window !== 'undefined' ? localStorage.getItem('stockwise_last_category_id') : null;
+    const defaultCat = storedCat && categories.some(c => c.id === storedCat) 
+      ? storedCat 
+      : categories.length > 0 ? categories[0].id : '';
+
     setFormData({
       name: '',
-      category_id: categories.length > 0 ? categories[0].id : '',
+      category_id: defaultCat,
       description: '',
       cost_price: '',
       selling_price: '',
-      initial_stock: '',
+      initial_stock: '0',
       min_stock_level: '5',
       unit: 'pcs',
       status: 'active',
@@ -244,6 +251,10 @@ export const ProductsView: React.FC = () => {
         );
         setIsAddModalOpen(false);
       }
+      if (typeof window !== 'undefined' && formData.category_id) {
+        localStorage.setItem('stockwise_last_category_id', formData.category_id);
+      }
+      showToast(editingProduct ? `✓ Product "${formData.name}" updated` : `✓ Product "${formData.name}" added successfully`, 'success');
       await refreshStoreData();
     } catch (err: any) {
       setFormError(err?.message || 'Failed to save product. Check database connection.');
@@ -256,10 +267,11 @@ export const ProductsView: React.FC = () => {
     if (!deletingProduct) return;
     try {
       await deleteProduct(deletingProduct.id);
+      showToast(`✓ Product "${deletingProduct.name}" deleted`, 'info');
       setDeletingProduct(null);
       await refreshStoreData();
     } catch (err: any) {
-      alert(`Could not delete product: ${err?.message}`);
+      showToast(err?.message ? `Could not delete product: ${err.message}` : 'Could not delete product. Please try again.', 'error');
     }
   };
 
@@ -356,10 +368,26 @@ export const ProductsView: React.FC = () => {
       {/* Products List (Replaced horizontal scrolling table with clickable list items) */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-xs divide-y divide-slate-100 overflow-hidden">
         {filteredProducts.length === 0 ? (
-          <div className="px-5 py-16 text-center text-slate-400">
-            <Package className="w-10 h-10 mx-auto mb-2 text-slate-300" />
-            <p className="font-semibold text-slate-700">No products found</p>
-            <p className="text-xs text-slate-400 mt-1">Try adjusting your search query or add a new product.</p>
+          <div className="px-5 py-16 text-center space-y-3">
+            <div className="w-12 h-12 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center mx-auto">
+              <Package className="w-6 h-6" />
+            </div>
+            <p className="font-bold text-slate-800 text-sm">
+              {searchQuery ? `No products matching "${searchQuery}"` : 'No Products Yet'}
+            </p>
+            <p className="text-xs text-slate-500 max-w-sm mx-auto">
+              {searchQuery 
+                ? 'Try searching with a different keyword, SKU, or clear your category filter.' 
+                : 'Your catalog will appear here once you add products. Products are immediately available in the POS register.'}
+            </p>
+            <button
+              type="button"
+              onClick={handleOpenAdd}
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold transition shadow-xs cursor-pointer inline-flex items-center gap-1.5"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>{searchQuery ? 'Add New Product' : 'Add First Product'}</span>
+            </button>
           </div>
         ) : (
           filteredProducts.map((product) => {
@@ -669,6 +697,26 @@ export const ProductsView: React.FC = () => {
                     }}
                     className="w-full px-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-blue-500 transition font-medium text-slate-800"
                   />
+                  {/* Smart Markup suggestions (Principle 1: Smart Defaults) */}
+                  {parseFloat(formData.cost_price) > 0 && (
+                    <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+                      <span className="text-[10px] text-slate-400">Markup:</span>
+                      {[0.2, 0.3, 0.5].map((rate) => {
+                        const cost = parseFloat(formData.cost_price);
+                        const price = Math.round(cost * (1 + rate) * 100) / 100;
+                        return (
+                          <button
+                            key={rate}
+                            type="button"
+                            onClick={() => setFormData((prev) => ({ ...prev, selling_price: price.toString() }))}
+                            className="text-[10px] font-semibold px-2 py-0.5 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 transition cursor-pointer"
+                          >
+                            +{rate * 100}% ({price})
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
               </div>
 

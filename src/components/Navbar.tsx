@@ -6,15 +6,17 @@ import {
   LogOut, 
   ChevronDown, 
   ShieldCheck, 
-  Settings
+  Settings,
+  Menu
 } from 'lucide-react';
 import { NavigationTab } from '../types';
 
 interface NavbarProps {
   onNavigate?: (tab: NavigationTab) => void;
+  onOpenMobileMenu?: () => void;
 }
 
-export const Navbar: React.FC<NavbarProps> = ({ onNavigate }) => {
+export const Navbar: React.FC<NavbarProps> = ({ onNavigate, onOpenMobileMenu }) => {
   const { user, profile, signOut } = useAuth();
   const { currentStore, isRealtimeConnected, currentMemberRole } = useStore();
   
@@ -32,6 +34,16 @@ export const Navbar: React.FC<NavbarProps> = ({ onNavigate }) => {
     <header className="h-14 sm:h-16 bg-white border-b border-slate-200 sticky top-0 z-30 px-3 sm:px-4 lg:px-8 flex items-center justify-between shadow-xs">
       {/* Position the StockWise branding at the top */}
       <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+        {onOpenMobileMenu && (
+          <button
+            type="button"
+            onClick={onOpenMobileMenu}
+            className="lg:hidden p-1.5 -ml-1 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-xl transition cursor-pointer"
+            aria-label="Open navigation menu"
+          >
+            <Menu className="w-5 h-5" />
+          </button>
+        )}
         <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-blue-600 text-white flex items-center justify-center font-black text-sm sm:text-base shadow-sm shadow-blue-500/20 shrink-0">
           SW
         </div>

@@ -46,7 +46,7 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
     <nav 
       id="mobile-bottom-navigation" 
       aria-label="Bottom Navigation"
-      className="fixed bottom-0 left-0 right-0 lg:left-64 z-50 bg-white/95 backdrop-blur-md border-t border-slate-200 shadow-xl px-2 py-1 sm:py-1.5 pb-safe"
+      className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-t border-slate-200 shadow-xl px-2 py-1 sm:py-1.5 pb-safe"
     >
       <div className="flex items-center justify-around max-w-lg mx-auto">
         {primaryMobileTabs.map((tab) => {

@@ -200,16 +200,21 @@ const MainAppLayout: React.FC = () => {
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* Top Navbar */}
-        <Navbar onNavigate={(tab) => setCurrentTab(tab)} />
+        <Navbar 
+          onNavigate={(tab) => setCurrentTab(tab)} 
+          onOpenMobileMenu={() => setMobileMenuOpen(true)}
+        />
 
         {/* View Routing */}
-        <main className="flex-1 p-3.5 sm:p-4 lg:p-8 max-w-7xl w-full mx-auto pb-28 sm:pb-32">
+        <main className={`flex-1 p-3.5 sm:p-4 lg:p-8 max-w-7xl w-full mx-auto ${currentTab === 'pos' ? 'pb-12 sm:pb-16' : 'pb-28 sm:pb-32'}`}>
           {currentTab === 'dashboard' && (
             <DashboardView onNavigate={(tab) => setCurrentTab(tab as NavigationTab)} />
           )}
           {currentTab === 'products' && <ProductsView />}
           {currentTab === 'inventory' && <InventoryView />}
-          {currentTab === 'pos' && <POSView />}
+          {currentTab === 'pos' && (
+            <POSView onNavigate={(tab) => setCurrentTab(tab as NavigationTab)} />
+          )}
           {currentTab === 'customers' && <CustomersView />}
           {currentTab === 'suppliers' && <SuppliersView />}
           {currentTab === 'transactions' && <TransactionsView />}
@@ -219,15 +224,17 @@ const MainAppLayout: React.FC = () => {
           {(currentTab === 'settings' || currentTab === 'stores') && <SettingsView />}
         </main>
 
-        {/* StockWise Mobile APK Bottom Bar for Phone & Tablet Screens */}
-        <MobileBottomNav
-          currentTab={currentTab}
-          onSelectTab={(tab) => {
-            setCurrentTab(tab);
-            window.scrollTo({ top: 0, behavior: 'smooth' });
-          }}
-          onOpenMoreMenu={() => setMobileMenuOpen(true)}
-        />
+        {/* StockWise Mobile Bottom Bar (Hidden on POS/Checkout to prevent overlapping Pay button) */}
+        {currentTab !== 'pos' && (
+          <MobileBottomNav
+            currentTab={currentTab}
+            onSelectTab={(tab) => {
+              setCurrentTab(tab);
+              window.scrollTo({ top: 0, behavior: 'smooth' });
+            }}
+            onOpenMoreMenu={() => setMobileMenuOpen(true)}
+          />
+        )}
       </div>
 
       {/* Global Quick Search Modal */}

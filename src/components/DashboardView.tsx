@@ -33,7 +33,8 @@ import {
   Edit2,
   Check,
   CreditCard,
-  Plus
+  Plus,
+  Bell
 } from 'lucide-react';
 import { DateRangeFilter, NavigationTab, Sale } from '../types';
 
@@ -78,6 +79,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onView
   const [targetModalOpen, setTargetModalOpen] = useState(false);
   const [targetInput, setTargetInput] = useState(() => (settings?.daily_sales_target ? String(settings.daily_sales_target) : ''));
   const [savingTarget, setSavingTarget] = useState(false);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
 
   // Time-of-day greeting (Principle 5 & 16: Endowment & Personalization)
   const greeting = useMemo(() => {
@@ -88,6 +90,16 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onView
   }, []);
 
   const userName = profile?.full_name || user?.email?.split('@')[0] || 'Store Owner';
+
+  const userInitials = useMemo(() => {
+    return (userName || 'SW')
+      .split(' ')
+      .filter(Boolean)
+      .map((w: string) => w[0])
+      .join('')
+      .slice(0, 2)
+      .toUpperCase();
+  }, [userName]);
 
   // Filter items by selected date range
   const filteredSales = useMemo(() => {
@@ -323,29 +335,169 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onView
   return (
     <div className="space-y-5 sm:space-y-6">
       {/* ======================================================== */}
-      {/* 1. PERSONALIZED WORKSPACE HEADER (IKEA EFFECT & IDENTITY)*/}
+      {/* 1. TOP BAR: APP NAME, NOTIFICATION ICON, PROFILE AVATAR  */}
+      {/* ======================================================== */}
+      <div className="flex items-center justify-between pb-1">
+        <div className="flex items-center gap-2.5">
+          <div className="w-9 h-9 rounded-xl bg-blue-600 flex items-center justify-center text-white shadow-md shadow-blue-600/30">
+            <StoreIcon className="w-5 h-5 text-white" />
+          </div>
+          <div>
+            <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight leading-none">
+              StockWise
+            </h1>
+            <p className="text-[11px] text-slate-500 font-medium mt-0.5">
+              Multi-store retail inventory &amp; POS
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2.5 sm:gap-3">
+          {/* Notification Icon */}
+          <div className="relative">
+            <button
+              type="button"
+              id="btn-notifications-toggle"
+              onClick={() => setNotificationsOpen(!notificationsOpen)}
+              className="w-10 h-10 rounded-xl bg-white border border-slate-200 hover:border-slate-300 text-slate-700 hover:bg-slate-50 flex items-center justify-center transition shadow-xs cursor-pointer relative"
+              title="Notifications & Alerts"
+              aria-label="Notifications"
+            >
+              <Bell className="w-4 h-4 text-slate-700" />
+              {(lowStockProducts.length + outOfStockProducts.length > 0 || creditOverview.debtorsCount > 0) && (
+                <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-red-600 text-white text-[10px] font-bold flex items-center justify-center ring-2 ring-white">
+                  {lowStockProducts.length + outOfStockProducts.length + (creditOverview.debtorsCount > 0 ? 1 : 0)}
+                </span>
+              )}
+            </button>
+
+            {/* Notification Popover Dropdown */}
+            {notificationsOpen && (
+              <div className="absolute right-0 mt-2 w-80 sm:w-88 bg-white rounded-2xl shadow-xl border border-slate-200 z-50 p-4 animate-in fade-in zoom-in-95 duration-100 space-y-3">
+                <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+                  <div className="flex items-center gap-1.5">
+                    <Bell className="w-4 h-4 text-blue-600" />
+                    <span className="text-xs font-bold text-slate-900">Notifications &amp; Alerts</span>
+                  </div>
+                  <button 
+                    type="button" 
+                    onClick={() => setNotificationsOpen(false)}
+                    className="text-slate-400 hover:text-slate-600 p-0.5 cursor-pointer"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+
+                <div className="space-y-2 text-xs">
+                  {lowStockProducts.length + outOfStockProducts.length > 0 && (
+                    <div 
+                      onClick={() => {
+                        setNotificationsOpen(false);
+                        onNavigate('inventory');
+                      }}
+                      className="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 cursor-pointer hover:bg-amber-100/70 transition flex items-start gap-2.5"
+                    >
+                      <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                      <div>
+                        <div className="font-bold">Inventory Low Stock Alert</div>
+                        <div className="text-[11px] text-amber-800 mt-0.5">
+                          {lowStockProducts.length + outOfStockProducts.length} items require replenishment.
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {creditOverview.totalOutstandingCredit > 0 && (
+                    <div 
+                      onClick={() => {
+                        setNotificationsOpen(false);
+                        onNavigate('customers');
+                      }}
+                      className="p-2.5 rounded-xl bg-purple-50 border border-purple-200 text-purple-900 cursor-pointer hover:bg-purple-100/70 transition flex items-start gap-2.5"
+                    >
+                      <CreditCard className="w-4 h-4 text-purple-600 shrink-0 mt-0.5" />
+                      <div>
+                        <div className="font-bold">Customer Credit Outstanding</div>
+                        <div className="text-[11px] text-purple-800 mt-0.5">
+                          {formatCurrency(creditOverview.totalOutstandingCredit, currency)} across {creditOverview.debtorsCount} debtors.
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {todaySalesCount > 0 ? (
+                    <div 
+                      onClick={() => {
+                        setNotificationsOpen(false);
+                        onNavigate('transactions');
+                      }}
+                      className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-900 cursor-pointer hover:bg-emerald-100/70 transition flex items-start gap-2.5"
+                    >
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                      <div>
+                        <div className="font-bold">Today&apos;s Store Performance</div>
+                        <div className="text-[11px] text-emerald-800 mt-0.5">
+                          {todaySalesCount} sales processed ({formatCurrency(todaySalesAmount, currency)}).
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="p-3 text-center text-slate-400 text-xs">
+                      No sales yet today. Open the POS to ring up your first order.
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Profile Avatar */}
+          <button
+            type="button"
+            id="btn-profile-avatar"
+            onClick={() => onNavigate('settings')}
+            className="flex items-center gap-2.5 pl-1.5 pr-3 py-1 rounded-xl bg-white border border-slate-200 hover:border-slate-300 transition shadow-xs cursor-pointer group"
+            title="Profile & Store Settings"
+          >
+            <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-blue-600 to-indigo-600 text-white font-bold text-xs flex items-center justify-center uppercase shadow-xs">
+              {userInitials}
+            </div>
+            <div className="hidden sm:block text-left text-xs">
+              <div className="font-bold text-slate-800 leading-tight group-hover:text-blue-600 transition truncate max-w-[120px]">
+                {userName}
+              </div>
+              <div className="text-[10px] text-slate-400 capitalize">
+                {profile?.role || 'Administrator'}
+              </div>
+            </div>
+          </button>
+        </div>
+      </div>
+
+      {/* ======================================================== */}
+      {/* 2. DASHBOARD OVERVIEW CARD                               */}
       {/* ======================================================== */}
       <div className="relative overflow-hidden rounded-2xl sm:rounded-3xl bg-slate-900 text-white p-5 sm:p-7 border border-slate-800 shadow-md">
         <div className="relative z-10 flex flex-col md:flex-row md:items-center md:justify-between gap-5">
           <div className="space-y-1.5">
-            <div className="flex items-center gap-2 text-xs font-semibold text-blue-400 uppercase tracking-wider">
-              <span>{greeting}, {userName}</span>
-              <span className="text-slate-600">·</span>
-              <span className="text-slate-400 capitalize">{profile?.role || 'Store Administrator'}</span>
+            <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-blue-500/20 text-blue-300 text-xs font-semibold">
+              <StoreIcon className="w-3.5 h-3.5" />
+              <span>Dashboard Overview</span>
             </div>
             
-            <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-white">
+            <h2 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-white">
               {currentStore?.business_name || currentStore?.name || 'StockWise Store'}
-            </h1>
+            </h2>
             
             <p className="text-xs sm:text-sm text-slate-400 flex items-center gap-2 font-medium">
+              <span>{greeting}, {userName}</span>
+              <span>·</span>
               <span>{currency} Workspace</span>
               <span>·</span>
               <span>{new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric', year: 'numeric' })}</span>
             </p>
           </div>
 
-          {/* ONE PROMINENT PRIMARY ACTION: POS SALE (Principle 9) */}
           <div className="flex items-center gap-3">
             <button
               type="button"
@@ -354,7 +506,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onView
               className="w-full sm:w-auto inline-flex items-center justify-center gap-2.5 px-6 py-3.5 rounded-xl bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white font-bold text-sm shadow-lg shadow-blue-600/30 transition group cursor-pointer active:scale-95"
             >
               <ShoppingCart className="w-4 h-4 text-white group-hover:scale-110 transition-transform" />
-              <span>New POS Sale</span>
+              <span>POS Sale</span>
               <ArrowRight className="w-4 h-4 text-white group-hover:translate-x-0.5 transition-transform" />
             </button>
           </div>
@@ -362,17 +514,315 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onView
       </div>
 
       {/* ======================================================== */}
-      {/* 2. GOAL-GRADIENT STORE SETUP PROGRESS (Principle 2 & 18) */}
+      {/* 3. 2x2 GRID DISPLAYING KEY METRICS                       */}
+      {/* ======================================================== */}
+      <div className="grid grid-cols-2 gap-3 sm:gap-4.5">
+        {/* Metric 1: Today's Revenue */}
+        <div 
+          onClick={() => canViewSales && onNavigate('transactions')}
+          className={`bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-xs transition flex flex-col justify-between ${
+            canViewSales ? 'hover:border-blue-300 hover:shadow-sm cursor-pointer' : 'cursor-default'
+          }`}
+        >
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-xs sm:text-sm font-semibold text-slate-600">Today&apos;s Revenue</span>
+            <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
+              <TrendingUp className="w-4 h-4 sm:w-5 sm:h-5" />
+            </div>
+          </div>
+          <div className="mt-2 sm:mt-3">
+            <div className="text-lg sm:text-2xl font-black text-slate-900 tracking-tight font-mono tabular-nums">
+              {canViewRevenue ? (
+                formatCurrency(todaySalesAmount, currency)
+              ) : (
+                <span className="text-slate-400 font-mono tracking-widest text-sm flex items-center gap-1">
+                  <Lock className="w-3.5 h-3.5 text-slate-400" />
+                  <span>Restricted</span>
+                </span>
+              )}
+            </div>
+            <div className="mt-1 text-[11px] sm:text-xs text-slate-500 font-medium">
+              <span>{todaySalesCount} {todaySalesCount === 1 ? 'sale' : 'sales'} completed today</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Metric 2: Total Sales */}
+        <div 
+          onClick={() => canViewSales && onNavigate('transactions')}
+          className={`bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-xs transition flex flex-col justify-between ${
+            canViewSales ? 'hover:border-blue-300 hover:shadow-sm cursor-pointer' : 'cursor-default'
+          }`}
+        >
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-xs sm:text-sm font-semibold text-slate-600">Total Sales</span>
+            <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
+              <DollarSign className="w-4 h-4 sm:w-5 sm:h-5" />
+            </div>
+          </div>
+          <div className="mt-2 sm:mt-3">
+            <div className="text-lg sm:text-2xl font-black text-slate-900 tracking-tight font-mono tabular-nums">
+              {canViewRevenue ? (
+                formatCurrency(totalSalesAmount, currency)
+              ) : (
+                <span className="text-slate-400 font-mono tracking-widest text-sm flex items-center gap-1">
+                  <Lock className="w-3.5 h-3.5 text-slate-400" />
+                  <span>Restricted</span>
+                </span>
+              )}
+            </div>
+            <div className="mt-1 text-[11px] sm:text-xs text-slate-500 font-medium">
+              <span>{sales.length} lifetime orders</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Metric 3: Total Products */}
+        <div 
+          onClick={() => canViewProducts && onNavigate('products')}
+          className={`bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-xs transition flex flex-col justify-between ${
+            canViewProducts ? 'hover:border-blue-300 hover:shadow-sm cursor-pointer' : 'cursor-default'
+          }`}
+        >
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-xs sm:text-sm font-semibold text-slate-600">Total Products</span>
+            <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0">
+              <Package className="w-4 h-4 sm:w-5 sm:h-5" />
+            </div>
+          </div>
+          <div className="mt-2 sm:mt-3">
+            <div className="text-lg sm:text-2xl font-black text-slate-900 tracking-tight font-mono tabular-nums">
+              {totalProductsCount}
+            </div>
+            <div className="mt-1 text-[11px] sm:text-xs text-slate-500 font-medium">
+              <span>{totalProductsCount - (lowStockProducts.length + outOfStockProducts.length)} in healthy stock</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Metric 4: Low Stock Alert */}
+        <div 
+          onClick={() => (canViewProducts || canAdjustStock) && onNavigate('inventory')}
+          className={`bg-white p-4 sm:p-5 rounded-2xl border border-amber-200/90 bg-amber-50/20 shadow-xs transition flex flex-col justify-between ${
+            (canViewProducts || canAdjustStock) ? 'hover:border-amber-400 hover:shadow-sm cursor-pointer' : 'cursor-default'
+          }`}
+        >
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-xs sm:text-sm font-semibold text-amber-900">Low Stock Alert</span>
+            <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center shrink-0">
+              <AlertTriangle className="w-4 h-4 sm:w-5 sm:h-5" />
+            </div>
+          </div>
+          <div className="mt-2 sm:mt-3">
+            <div className="text-lg sm:text-2xl font-black text-amber-900 tracking-tight font-mono tabular-nums flex items-center gap-1.5">
+              <span>{lowStockProducts.length + outOfStockProducts.length}</span>
+              {lowStockProducts.length + outOfStockProducts.length > 0 && (
+                <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-amber-200 text-amber-900">
+                  ⚠ Attention
+                </span>
+              )}
+            </div>
+            <div className="mt-1 text-[11px] sm:text-xs text-amber-700 font-medium truncate">
+              {lowStockProducts.length + outOfStockProducts.length > 0 ? (
+                <span>{lowStockProducts.length} low threshold · {outOfStockProducts.length} out of stock</span>
+              ) : (
+                <span>✓ All inventory levels healthy</span>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ======================================================== */}
+      {/* 4. MAIN MENU SECTION (GRID BUTTONS & WIDE SUBSCRIPTION)  */}
+      {/* ======================================================== */}
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <h2 className="text-base sm:text-lg font-bold text-slate-900 tracking-tight">
+            Main Menu
+          </h2>
+          <span className="text-xs text-slate-400 font-medium">Quick navigation</span>
+        </div>
+
+        {/* Grid of 9 Menu Buttons */}
+        <div className="grid grid-cols-3 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-3 gap-2.5 sm:gap-3.5">
+          {/* 1. New Sale (POS) */}
+          <button
+            type="button"
+            onClick={() => onNavigate('pos')}
+            className="p-3 sm:p-4 rounded-2xl bg-white hover:bg-blue-50/50 border border-slate-200 hover:border-blue-300 shadow-xs hover:shadow-sm transition flex flex-col items-center justify-center text-center gap-2 group cursor-pointer active:scale-95"
+          >
+            <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center group-hover:scale-110 group-hover:bg-blue-600 group-hover:text-white transition-all shadow-xs">
+              <ShoppingCart className="w-5 h-5" />
+            </div>
+            <span className="text-xs sm:text-sm font-bold text-slate-800 group-hover:text-blue-600 transition">
+              New Sale (POS)
+            </span>
+          </button>
+
+          {/* 2. Products */}
+          <button
+            type="button"
+            onClick={() => onNavigate('products')}
+            className="p-3 sm:p-4 rounded-2xl bg-white hover:bg-indigo-50/50 border border-slate-200 hover:border-indigo-300 shadow-xs hover:shadow-sm transition flex flex-col items-center justify-center text-center gap-2 group cursor-pointer active:scale-95"
+          >
+            <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center group-hover:scale-110 group-hover:bg-indigo-600 group-hover:text-white transition-all shadow-xs">
+              <Package className="w-5 h-5" />
+            </div>
+            <span className="text-xs sm:text-sm font-bold text-slate-800 group-hover:text-indigo-600 transition">
+              Products
+            </span>
+          </button>
+
+          {/* 3. Inventory */}
+          <button
+            type="button"
+            onClick={() => onNavigate('inventory')}
+            className="p-3 sm:p-4 rounded-2xl bg-white hover:bg-amber-50/50 border border-slate-200 hover:border-amber-300 shadow-xs hover:shadow-sm transition flex flex-col items-center justify-center text-center gap-2 group cursor-pointer active:scale-95 relative"
+          >
+            {lowStockProducts.length + outOfStockProducts.length > 0 && (
+              <span className="absolute top-2 right-2 px-1.5 py-0.5 rounded-full bg-amber-500 text-white text-[10px] font-bold">
+                {lowStockProducts.length + outOfStockProducts.length}
+              </span>
+            )}
+            <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center group-hover:scale-110 group-hover:bg-amber-600 group-hover:text-white transition-all shadow-xs">
+              <Layers className="w-5 h-5" />
+            </div>
+            <span className="text-xs sm:text-sm font-bold text-slate-800 group-hover:text-amber-600 transition">
+              Inventory
+            </span>
+          </button>
+
+          {/* 4. Sales History */}
+          <button
+            type="button"
+            onClick={() => onNavigate('transactions')}
+            className="p-3 sm:p-4 rounded-2xl bg-white hover:bg-emerald-50/50 border border-slate-200 hover:border-emerald-300 shadow-xs hover:shadow-sm transition flex flex-col items-center justify-center text-center gap-2 group cursor-pointer active:scale-95"
+          >
+            <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center group-hover:scale-110 group-hover:bg-emerald-600 group-hover:text-white transition-all shadow-xs">
+              <Receipt className="w-5 h-5" />
+            </div>
+            <span className="text-xs sm:text-sm font-bold text-slate-800 group-hover:text-emerald-600 transition">
+              Sales History
+            </span>
+          </button>
+
+          {/* 5. Reports */}
+          <button
+            type="button"
+            onClick={() => onNavigate('reports')}
+            className="p-3 sm:p-4 rounded-2xl bg-white hover:bg-blue-50/50 border border-slate-200 hover:border-blue-300 shadow-xs hover:shadow-sm transition flex flex-col items-center justify-center text-center gap-2 group cursor-pointer active:scale-95"
+          >
+            <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center group-hover:scale-110 group-hover:bg-blue-600 group-hover:text-white transition-all shadow-xs">
+              <BarChart3 className="w-5 h-5" />
+            </div>
+            <span className="text-xs sm:text-sm font-bold text-slate-800 group-hover:text-blue-600 transition">
+              Reports
+            </span>
+          </button>
+
+          {/* 6. Settings */}
+          <button
+            type="button"
+            onClick={() => onNavigate('settings')}
+            className="p-3 sm:p-4 rounded-2xl bg-white hover:bg-slate-100/70 border border-slate-200 hover:border-slate-400 shadow-xs hover:shadow-sm transition flex flex-col items-center justify-center text-center gap-2 group cursor-pointer active:scale-95"
+          >
+            <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-slate-100 text-slate-700 flex items-center justify-center group-hover:scale-110 group-hover:bg-slate-700 group-hover:text-white transition-all shadow-xs">
+              <Settings className="w-5 h-5" />
+            </div>
+            <span className="text-xs sm:text-sm font-bold text-slate-800 group-hover:text-slate-900 transition">
+              Settings
+            </span>
+          </button>
+
+          {/* 7. Customers */}
+          <button
+            type="button"
+            onClick={() => onNavigate('customers')}
+            className="p-3 sm:p-4 rounded-2xl bg-white hover:bg-purple-50/50 border border-slate-200 hover:border-purple-300 shadow-xs hover:shadow-sm transition flex flex-col items-center justify-center text-center gap-2 group cursor-pointer active:scale-95"
+          >
+            <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center group-hover:scale-110 group-hover:bg-purple-600 group-hover:text-white transition-all shadow-xs">
+              <Users className="w-5 h-5" />
+            </div>
+            <span className="text-xs sm:text-sm font-bold text-slate-800 group-hover:text-purple-600 transition">
+              Customers
+            </span>
+          </button>
+
+          {/* 8. Suppliers */}
+          <button
+            type="button"
+            onClick={() => onNavigate('suppliers')}
+            className="p-3 sm:p-4 rounded-2xl bg-white hover:bg-cyan-50/50 border border-slate-200 hover:border-cyan-300 shadow-xs hover:shadow-sm transition flex flex-col items-center justify-center text-center gap-2 group cursor-pointer active:scale-95"
+          >
+            <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-cyan-50 text-cyan-600 flex items-center justify-center group-hover:scale-110 group-hover:bg-cyan-600 group-hover:text-white transition-all shadow-xs">
+              <Truck className="w-5 h-5" />
+            </div>
+            <span className="text-xs sm:text-sm font-bold text-slate-800 group-hover:text-cyan-600 transition">
+              Suppliers
+            </span>
+          </button>
+
+          {/* 9. Staff */}
+          <button
+            type="button"
+            onClick={() => onNavigate('staff')}
+            className="p-3 sm:p-4 rounded-2xl bg-white hover:bg-rose-50/50 border border-slate-200 hover:border-rose-300 shadow-xs hover:shadow-sm transition flex flex-col items-center justify-center text-center gap-2 group cursor-pointer active:scale-95"
+          >
+            <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center group-hover:scale-110 group-hover:bg-rose-600 group-hover:text-white transition-all shadow-xs">
+              <ShieldCheck className="w-5 h-5" />
+            </div>
+            <span className="text-xs sm:text-sm font-bold text-slate-800 group-hover:text-rose-600 transition">
+              Staff
+            </span>
+          </button>
+        </div>
+
+        {/* Wide Button for "Subscription" */}
+        <div className="pt-1">
+          <button
+            type="button"
+            id="btn-mainmenu-subscription"
+            onClick={() => setSubscriptionModalOpen(true)}
+            className="w-full p-4 sm:p-5 rounded-2xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-white shadow-xs transition flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-left cursor-pointer group"
+          >
+            <div className="flex items-center gap-3.5">
+              <div className="w-10 h-10 rounded-xl bg-amber-400/20 text-amber-400 border border-amber-400/30 flex items-center justify-center shrink-0 group-hover:scale-110 transition-transform">
+                <Crown className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="font-bold text-sm sm:text-base text-white">Subscription</span>
+                  <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 text-[10px] font-bold uppercase tracking-wider">
+                    Active Pro Plan
+                  </span>
+                </div>
+                <p className="text-xs text-slate-300 mt-0.5">
+                  Multi-register terminal sync, unlimited inventory, cloud database backup &amp; reports
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-1.5 text-xs font-bold text-blue-400 group-hover:text-blue-300 transition shrink-0">
+              <span>Manage Plan</span>
+              <ChevronRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />
+            </div>
+          </button>
+        </div>
+      </div>
+
+      {/* ======================================================== */}
+      {/* 5. GOAL-GRADIENT STORE SETUP PROGRESS                    */}
       {/* ======================================================== */}
       <StoreSetupProgress onNavigate={onNavigate} />
 
       {/* ======================================================== */}
-      {/* 3. ACTIONABLE BUSINESS INSIGHTS (Reciprocity & Loss Aversion) */}
+      {/* 6. ACTIONABLE BUSINESS INSIGHTS                          */}
       {/* ======================================================== */}
       <ActionableInsights onNavigate={onNavigate} />
 
       {/* ======================================================== */}
-      {/* 4. TODAY'S BUSINESS PROGRESS & SALES TARGET (Principle 3 & 7) */}
+      {/* 7. TODAY'S BUSINESS PROGRESS & SALES TARGET              */}
       {/* ======================================================== */}
       {canViewRevenue && (
         <div className="bg-white p-5 sm:p-6 rounded-2xl sm:rounded-3xl border border-slate-200 shadow-xs space-y-4">
@@ -519,187 +969,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onView
       )}
 
       {/* ======================================================== */}
-      {/* 5. 2x2 KEY METRIC CARDS WITH CONTEXT (Principles 7 & 27) */}
-      {/* ======================================================== */}
-      <div className="grid grid-cols-2 gap-3 sm:gap-4.5">
-        {/* Metric 1: Today's Revenue */}
-        <div 
-          onClick={() => canViewSales && onNavigate('transactions')}
-          className={`bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-xs transition flex flex-col justify-between ${
-            canViewSales ? 'hover:border-blue-300 hover:shadow-sm cursor-pointer' : 'cursor-default'
-          }`}
-        >
-          <div className="flex items-center justify-between gap-2">
-            <span className="text-xs sm:text-sm font-semibold text-slate-600">Today&apos;s Revenue</span>
-            <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
-              <TrendingUp className="w-4 h-4 sm:w-5 sm:h-5" />
-            </div>
-          </div>
-          <div className="mt-2 sm:mt-3">
-            <div className="text-lg sm:text-2xl font-black text-slate-900 tracking-tight font-mono tabular-nums">
-              {canViewRevenue ? (
-                formatCurrency(todaySalesAmount, currency)
-              ) : (
-                <span className="text-slate-400 font-mono tracking-widest text-sm flex items-center gap-1">
-                  <Lock className="w-3.5 h-3.5 text-slate-400" />
-                  <span>Restricted</span>
-                </span>
-              )}
-            </div>
-            <div className="mt-1 text-[11px] sm:text-xs text-slate-500 font-medium">
-              <span>{todaySalesCount} {todaySalesCount === 1 ? 'sale' : 'sales'} completed today</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Metric 2: Total Lifetime Sales */}
-        <div 
-          onClick={() => canViewSales && onNavigate('transactions')}
-          className={`bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-xs transition flex flex-col justify-between ${
-            canViewSales ? 'hover:border-blue-300 hover:shadow-sm cursor-pointer' : 'cursor-default'
-          }`}
-        >
-          <div className="flex items-center justify-between gap-2">
-            <span className="text-xs sm:text-sm font-semibold text-slate-600">Total Lifetime Sales</span>
-            <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
-              <DollarSign className="w-4 h-4 sm:w-5 sm:h-5" />
-            </div>
-          </div>
-          <div className="mt-2 sm:mt-3">
-            <div className="text-lg sm:text-2xl font-black text-slate-900 tracking-tight font-mono tabular-nums">
-              {canViewRevenue ? (
-                formatCurrency(totalSalesAmount, currency)
-              ) : (
-                <span className="text-slate-400 font-mono tracking-widest text-sm flex items-center gap-1">
-                  <Lock className="w-3.5 h-3.5 text-slate-400" />
-                  <span>Restricted</span>
-                </span>
-              )}
-            </div>
-            <div className="mt-1 text-[11px] sm:text-xs text-slate-500 font-medium">
-              <span>{sales.length} lifetime orders</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Metric 3: Active Products */}
-        <div 
-          onClick={() => canViewProducts && onNavigate('products')}
-          className={`bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-xs transition flex flex-col justify-between ${
-            canViewProducts ? 'hover:border-blue-300 hover:shadow-sm cursor-pointer' : 'cursor-default'
-          }`}
-        >
-          <div className="flex items-center justify-between gap-2">
-            <span className="text-xs sm:text-sm font-semibold text-slate-600">Active Products</span>
-            <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0">
-              <Package className="w-4 h-4 sm:w-5 sm:h-5" />
-            </div>
-          </div>
-          <div className="mt-2 sm:mt-3">
-            <div className="text-lg sm:text-2xl font-black text-slate-900 tracking-tight font-mono tabular-nums">
-              {totalProductsCount}
-            </div>
-            <div className="mt-1 text-[11px] sm:text-xs text-slate-500 font-medium">
-              <span>{totalProductsCount - (lowStockProducts.length + outOfStockProducts.length)} in healthy stock</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Metric 4: Low Stock Alert (Loss Aversion with Non-Color Indicator) */}
-        <div 
-          onClick={() => (canViewProducts || canAdjustStock) && onNavigate('inventory')}
-          className={`bg-white p-4 sm:p-5 rounded-2xl border border-amber-200/90 bg-amber-50/20 shadow-xs transition flex flex-col justify-between ${
-            (canViewProducts || canAdjustStock) ? 'hover:border-amber-400 hover:shadow-sm cursor-pointer' : 'cursor-default'
-          }`}
-        >
-          <div className="flex items-center justify-between gap-2">
-            <span className="text-xs sm:text-sm font-semibold text-amber-900">Low Stock Alert</span>
-            <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center shrink-0">
-              <AlertTriangle className="w-4 h-4 sm:w-5 sm:h-5" />
-            </div>
-          </div>
-          <div className="mt-2 sm:mt-3">
-            <div className="text-lg sm:text-2xl font-black text-amber-900 tracking-tight font-mono tabular-nums flex items-center gap-1.5">
-              <span>{lowStockProducts.length + outOfStockProducts.length}</span>
-              {lowStockProducts.length + outOfStockProducts.length > 0 && (
-                <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-amber-200 text-amber-900">
-                  ⚠ Attention
-                </span>
-              )}
-            </div>
-            <div className="mt-1 text-[11px] sm:text-xs text-amber-700 font-medium truncate">
-              {lowStockProducts.length + outOfStockProducts.length > 0 ? (
-                <span>{lowStockProducts.length} low threshold · {outOfStockProducts.length} out of stock</span>
-              ) : (
-                <span>✓ All inventory levels healthy</span>
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* ======================================================== */}
-      {/* 6. PRIMARY & SECONDARY QUICK ACTIONS (Principle 9)       */}
-      {/* ======================================================== */}
-      <div className="space-y-3">
-        <div className="flex items-center justify-between">
-          <h2 className="text-sm font-bold text-slate-900 tracking-tight uppercase tracking-wider text-xs text-slate-500">
-            Quick Actions
-          </h2>
-          <span className="text-xs text-slate-400">One-click workflows</span>
-        </div>
-
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 sm:gap-3">
-          {/* Action 1: New Sale (Primary) */}
-          <button
-            type="button"
-            onClick={() => onNavigate('pos')}
-            className="p-3.5 rounded-2xl bg-blue-600 hover:bg-blue-500 text-white shadow-xs transition flex flex-col items-center justify-center gap-1.5 cursor-pointer active:scale-95 group"
-          >
-            <ShoppingCart className="w-5 h-5 text-white group-hover:scale-110 transition-transform" />
-            <span className="text-xs font-bold">New POS Sale</span>
-          </button>
-
-          {/* Action 2: Add Product */}
-          {canViewProducts && (
-            <button
-              type="button"
-              onClick={() => onNavigate('products')}
-              className="p-3.5 rounded-2xl bg-white hover:bg-slate-50 border border-slate-200 text-slate-800 shadow-xs transition flex flex-col items-center justify-center gap-1.5 cursor-pointer active:scale-95 group"
-            >
-              <Package className="w-5 h-5 text-indigo-600 group-hover:scale-110 transition-transform" />
-              <span className="text-xs font-semibold">Manage Products</span>
-            </button>
-          )}
-
-          {/* Action 3: Customer Credit & Repayments */}
-          {canViewCredit && (
-            <button
-              type="button"
-              onClick={() => onNavigate('customers')}
-              className="p-3.5 rounded-2xl bg-white hover:bg-slate-50 border border-slate-200 text-slate-800 shadow-xs transition flex flex-col items-center justify-center gap-1.5 cursor-pointer active:scale-95 group"
-            >
-              <CreditCard className="w-5 h-5 text-purple-600 group-hover:scale-110 transition-transform" />
-              <span className="text-xs font-semibold">Customer Credit</span>
-            </button>
-          )}
-
-          {/* Action 4: Reports */}
-          {canViewReports && (
-            <button
-              type="button"
-              onClick={() => onNavigate('reports')}
-              className="p-3.5 rounded-2xl bg-white hover:bg-slate-50 border border-slate-200 text-slate-800 shadow-xs transition flex flex-col items-center justify-center gap-1.5 cursor-pointer active:scale-95 group"
-            >
-              <BarChart3 className="w-5 h-5 text-emerald-600 group-hover:scale-110 transition-transform" />
-              <span className="text-xs font-semibold">Business Reports</span>
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* ======================================================== */}
-      {/* 7. CUSTOMER CREDIT & DEBT SUMMARY (Principle 13)         */}
+      {/* 8. CUSTOMER CREDIT & DEBT SUMMARY                        */}
       {/* ======================================================== */}
       {canViewCredit && (
         <div className="pt-2 space-y-4">
@@ -787,7 +1057,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onView
       )}
 
       {/* ======================================================== */}
-      {/* 8. RECENT SALES ACTIVITY FEED (TRANSPARENCY & CONTEXT)   */}
+      {/* 9. RECENT SALES ACTIVITY FEED                            */}
       {/* ======================================================== */}
       {canViewSales && (
         <div className="bg-white p-5 sm:p-6 rounded-2xl sm:rounded-3xl border border-slate-200 shadow-xs space-y-4">
@@ -870,7 +1140,90 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onView
       )}
 
       {/* ======================================================== */}
-      {/* 9. SALES TARGET MODAL (Principle 3: Goal-Gradient)       */}
+      {/* 10. SUBSCRIPTION MODAL                                   */}
+      {/* ======================================================== */}
+      {subscriptionModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xs">
+          <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 max-w-md w-full p-6 text-slate-800 animate-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center">
+                  <Crown className="w-5 h-5 text-amber-600" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-base text-slate-900">StockWise Subscription</h3>
+                  <p className="text-xs text-slate-500">Manage plan tier &amp; business features</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSubscriptionModalOpen(false)}
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="py-4 space-y-4 text-xs">
+              <div className="p-4 rounded-2xl bg-gradient-to-tr from-slate-900 to-indigo-950 text-white space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-amber-400">Current Plan</span>
+                  <span className="px-2 py-0.5 rounded-full bg-emerald-500 text-white font-bold text-[10px] tracking-wide uppercase">
+                    Active
+                  </span>
+                </div>
+                <div className="text-xl font-extrabold text-white">StockWise Pro Edition</div>
+                <p className="text-xs text-slate-300">
+                  Full multi-branch store license unlocked with real-time cloud sync.
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <div className="text-xs font-bold text-slate-800 uppercase tracking-wider">Included In Your Plan:</div>
+                <ul className="space-y-1.5 text-slate-600">
+                  <li className="flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                    <span>Unlimited POS terminal sales and receipts</span>
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                    <span>Multi-store branches &amp; warehouse locations</span>
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                    <span>Customer credit ledger, debt tracking &amp; repayments</span>
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                    <span>Real-time low stock alerts &amp; audit history</span>
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                    <span>Role-based staff invitations &amp; granular permissions</span>
+                  </li>
+                </ul>
+              </div>
+
+              <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-600 text-[11px]">
+                Active License ID: <strong className="font-mono text-slate-800">SW-PRO-{currentStore?.id?.slice(0, 8).toUpperCase() || 'ENTERPRISE'}</strong>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setSubscriptionModalOpen(false)}
+                className="w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-xl transition cursor-pointer"
+              >
+                Close Plan Details
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ======================================================== */}
+      {/* 11. SALES TARGET MODAL                                   */}
       {/* ======================================================== */}
       {targetModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs">
@@ -883,7 +1236,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onView
               <button
                 type="button"
                 onClick={() => setTargetModalOpen(false)}
-                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg"
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>

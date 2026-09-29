@@ -23,7 +23,10 @@ import {
   PackageCheck,
   UserPlus,
   ShoppingBag,
-  Coins
+  Coins,
+  Clock,
+  Calendar,
+  FileText
 } from 'lucide-react';
 
 interface POSViewProps {
@@ -44,6 +47,8 @@ export const POSView: React.FC<POSViewProps> = ({ onNavigate }) => {
   const [discountPercent, setDiscountPercent] = useState<number>(0);
   const [notes, setNotes] = useState<string>('');
   const [cashTendered, setCashTendered] = useState<string>('');
+  const [creditUpfrontAmount, setCreditUpfrontAmount] = useState<string>('');
+  const [creditDueDate, setCreditDueDate] = useState<string>('');
 
   // Processing State
   const [isProcessing, setIsProcessing] = useState(false);
@@ -136,6 +141,8 @@ export const POSView: React.FC<POSViewProps> = ({ onNavigate }) => {
     setDiscountPercent(0);
     setNotes('');
     setCashTendered('');
+    setCreditUpfrontAmount('');
+    setCreditDueDate('');
     setCheckoutError(null);
   };
 
@@ -176,9 +183,31 @@ export const POSView: React.FC<POSViewProps> = ({ onNavigate }) => {
     return 0;
   }, [tenderedNum, totalAmount]);
 
+  // Credit / Pay Later Calculations
+  const creditUpfrontNum = useMemo(() => {
+    const val = parseFloat(creditUpfrontAmount);
+    return isNaN(val) ? 0 : val;
+  }, [creditUpfrontAmount]);
+
+  const creditRemainingDebt = useMemo(() => {
+    return Math.max(0, Math.round((totalAmount - creditUpfrontNum) * 100) / 100);
+  }, [totalAmount, creditUpfrontNum]);
+
   // Checkout Execution
   const handleCompleteSale = async () => {
     if (!currentStore || cart.length === 0 || isProcessing) return;
+
+    // Credit Sale Validation: Customer is mandatory
+    if (paymentMethod === 'credit') {
+      if (!selectedCustomerId) {
+        setCheckoutError('A customer profile must be selected before a Credit / Pay Later sale can be completed.');
+        return;
+      }
+      if (creditUpfrontNum > totalAmount) {
+        setCheckoutError(`Upfront deposit cannot exceed the total sale amount (${formatCurrency(totalAmount, currency)}).`);
+        return;
+      }
+    }
 
     // Double check stock availability
     for (const item of cart) {
@@ -196,6 +225,7 @@ export const POSView: React.FC<POSViewProps> = ({ onNavigate }) => {
       const selectedCustomer = customers.find((c) => c.id === selectedCustomerId);
       const cashierName = profile?.full_name || user?.email || 'Store Cashier';
       const isCash = paymentMethod === 'cash';
+      const isCredit = paymentMethod === 'credit';
       const finalTendered = isCash ? (tenderedNum || totalAmount) : undefined;
       const finalChange = isCash ? (tenderedNum >= totalAmount ? changeDue : 0) : undefined;
 
@@ -213,6 +243,9 @@ export const POSView: React.FC<POSViewProps> = ({ onNavigate }) => {
           notes: notes || null,
           amountTendered: finalTendered,
           changeDue: finalChange,
+          amountPaid: isCredit ? creditUpfrontNum : undefined,
+          balanceDue: isCredit ? creditRemainingDebt : undefined,
+          dueDate: isCredit && creditDueDate ? creditDueDate : null,
         },
         cart.map((item) => ({
           productId: item.product.id,
@@ -230,6 +263,9 @@ export const POSView: React.FC<POSViewProps> = ({ onNavigate }) => {
         ...sale,
         amount_tendered: finalTendered,
         change_due: finalChange,
+        amount_paid: isCredit ? creditUpfrontNum : undefined,
+        balance_due: isCredit ? creditRemainingDebt : undefined,
+        due_date: isCredit && creditDueDate ? creditDueDate : null,
         items: cart.map((item) => ({
           id: item.product.id,
           sale_id: sale.id,
@@ -603,12 +639,13 @@ export const POSView: React.FC<POSViewProps> = ({ onNavigate }) => {
             <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-2">
               Payment Method
             </label>
-            <div className="grid grid-cols-4 gap-1.5">
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-1.5">
               {[
                 { id: 'cash', label: 'Cash', icon: Banknote },
                 { id: 'bank_transfer', label: 'Transfer', icon: Building },
                 { id: 'pos', label: 'POS Card', icon: CreditCard },
                 { id: 'mixed', label: 'Mixed', icon: Receipt },
+                { id: 'credit', label: 'Credit (Pay Later)', icon: Clock },
               ].map((m) => {
                 const Icon = m.icon;
                 const isSelected = paymentMethod === m.id;
@@ -619,7 +656,9 @@ export const POSView: React.FC<POSViewProps> = ({ onNavigate }) => {
                     onClick={() => setPaymentMethod(m.id as PaymentMethod)}
                     className={`py-2 px-1 text-center rounded-xl border text-xs font-semibold transition flex flex-col items-center gap-1 cursor-pointer ${
                       isSelected
-                        ? 'border-blue-600 bg-blue-50 text-blue-700 shadow-xs'
+                        ? m.id === 'credit'
+                          ? 'border-amber-600 bg-amber-50 text-amber-800 shadow-xs'
+                          : 'border-blue-600 bg-blue-50 text-blue-700 shadow-xs'
                         : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
                     }`}
                   >
@@ -692,6 +731,121 @@ export const POSView: React.FC<POSViewProps> = ({ onNavigate }) => {
                   </span>
                 </div>
               ) : null}
+            </div>
+          )}
+
+          {/* Credit / Pay Later Panel */}
+          {paymentMethod === 'credit' && (
+            <div className="px-4 py-3 border-t border-slate-200 bg-amber-50/40 space-y-2.5">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5 text-xs font-bold text-amber-900">
+                  <Clock className="w-4 h-4 text-amber-600" />
+                  <span>Credit / Pay Later Sale</span>
+                </div>
+                <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-200">
+                  Customer Debt Ledger
+                </span>
+              </div>
+
+              {/* Customer Profile Check */}
+              {!selectedCustomerId ? (
+                <div className="p-2.5 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs flex items-start gap-2">
+                  <AlertCircle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
+                  <div>
+                    <span className="font-bold">Customer Assignment Required:</span>
+                    <p className="text-[11px] text-red-600 mt-0.5">
+                      Please select a customer profile under "Customer Assignment" above before completing a credit sale.
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <div className="p-2.5 rounded-xl bg-white border border-amber-200/80 flex items-center justify-between text-xs">
+                  <span className="text-slate-600 font-medium truncate">
+                    Debtor: <strong className="text-slate-900">{customers.find((c) => c.id === selectedCustomerId)?.name}</strong>
+                  </span>
+                  <span className="text-[11px] text-amber-800 font-semibold bg-amber-50 px-2 py-0.5 rounded-lg border border-amber-200">
+                    Verified Profile
+                  </span>
+                </div>
+              )}
+
+              {/* Upfront Payment Input */}
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-[11px] font-semibold text-slate-700">
+                    Customer Pays Today (Deposit / Partial)
+                  </label>
+                  {creditUpfrontAmount && (
+                    <button
+                      type="button"
+                      onClick={() => setCreditUpfrontAmount('')}
+                      className="text-[11px] font-medium text-slate-400 hover:text-red-600 transition cursor-pointer"
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
+
+                <div className="relative">
+                  <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-sm select-none">
+                    {currency === 'USD' ? '$' : currency}
+                  </span>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    placeholder="0.00 (Customer pays ₦0 today)"
+                    value={creditUpfrontAmount}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (/^\d*\.?\d{0,2}$/.test(val) || val === '') {
+                        setCreditUpfrontAmount(val);
+                      }
+                    }}
+                    className="w-full pl-8 pr-24 py-2 bg-white border border-slate-300 rounded-xl text-base font-bold font-mono text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent transition shadow-xs"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setCreditUpfrontAmount('0')}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] font-bold rounded-lg transition cursor-pointer"
+                  >
+                    0 Upfront
+                  </button>
+                </div>
+              </div>
+
+              {/* Debt Calculation Breakdown Card */}
+              <div className="p-2.5 rounded-xl bg-amber-100/70 border border-amber-200 space-y-1 text-xs">
+                <div className="flex justify-between text-slate-700">
+                  <span>Total Sale Amount:</span>
+                  <span className="font-semibold">{formatCurrency(totalAmount, currency)}</span>
+                </div>
+                <div className="flex justify-between text-slate-700">
+                  <span>Customer Pays Today:</span>
+                  <span className="font-semibold text-emerald-700">
+                    {formatCurrency(creditUpfrontNum, currency)}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center pt-1 border-t border-amber-200 font-bold text-amber-950">
+                  <span>Outstanding Credit Added to Account:</span>
+                  <span className="text-base text-amber-800 font-mono font-black">
+                    {formatCurrency(creditRemainingDebt, currency)}
+                  </span>
+                </div>
+              </div>
+
+              {/* Promised Repayment Date */}
+              <div>
+                <label className="block text-[11px] font-medium text-slate-600 mb-1 flex items-center gap-1">
+                  <Calendar className="w-3.5 h-3.5 text-slate-400" />
+                  <span>Promised Repayment Date (Optional):</span>
+                </label>
+                <input
+                  type="date"
+                  value={creditDueDate}
+                  onChange={(e) => setCreditDueDate(e.target.value)}
+                  className="w-full px-3 py-1.5 text-xs bg-white border border-slate-300 rounded-lg text-slate-800 focus:outline-none focus:border-amber-500"
+                />
+              </div>
             </div>
           )}
 
@@ -784,7 +938,7 @@ export const POSView: React.FC<POSViewProps> = ({ onNavigate }) => {
                   </div>
                 )}
                 <div className="flex justify-between font-bold text-sm text-slate-900 pt-1 border-t border-slate-300">
-                  <span>TOTAL PAID:</span>
+                  <span>{completedSale.payment_method === 'credit' ? 'TOTAL SALE:' : 'TOTAL PAID:'}</span>
                   <span>{formatCurrency(completedSale.total_amount, currency)}</span>
                 </div>
                 {completedSale.payment_method === 'cash' && completedSale.amount_tendered !== undefined && (
@@ -798,6 +952,27 @@ export const POSView: React.FC<POSViewProps> = ({ onNavigate }) => {
                       <span>{formatCurrency(completedSale.change_due || 0, currency)}</span>
                     </div>
                   </>
+                )}
+                {completedSale.payment_method === 'credit' && (
+                  <div className="mt-2 p-2 rounded-lg bg-amber-100/70 border border-amber-200 text-left text-[11px] space-y-1">
+                    <div className="flex justify-between text-slate-700">
+                      <span>Upfront Paid Today:</span>
+                      <span className="font-semibold text-emerald-700">
+                        {formatCurrency(completedSale.amount_paid || 0, currency)}
+                      </span>
+                    </div>
+                    <div className="flex justify-between font-bold text-amber-900 pt-1 border-t border-amber-200">
+                      <span>Outstanding Debt Added:</span>
+                      <span className="font-mono">
+                        {formatCurrency(completedSale.balance_due ?? completedSale.total_amount, currency)}
+                      </span>
+                    </div>
+                    {completedSale.due_date && (
+                      <div className="text-[10px] text-slate-600 pt-0.5">
+                        Promised Due Date: {new Date(completedSale.due_date).toLocaleDateString()}
+                      </div>
+                    )}
+                  </div>
                 )}
               </div>
 

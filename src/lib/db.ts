@@ -11,8 +11,13 @@ import {
   StoreMember,
   StoreSettings,
   MovementType,
-  PaymentMethod
+  PaymentMethod,
+  CustomerPayment,
+  CustomerLedgerEntry,
+  StaffInvitation,
+  StaffActivity
 } from '../types';
+import { generateInvitationToken, ROLE_TEMPLATES, formatRoleName } from './permissions';
 
 // ==========================================
 // USER-SCOPED STORAGE FOR STRICT ISOLATION
@@ -29,6 +34,9 @@ export interface UserStorageSchema {
   expenses: Expense[];
   inventoryMovements: InventoryMovement[];
   storeMembers: StoreMember[];
+  customerPayments: CustomerPayment[];
+  staffInvitations?: StaffInvitation[];
+  staffActivity?: StaffActivity[];
 }
 
 export function getCurrentUserId(): string {
@@ -52,6 +60,7 @@ export function getUserStorage(userId: string): UserStorageSchema {
       expenses: [],
       inventoryMovements: [],
       storeMembers: [],
+      customerPayments: [],
     };
   }
   const key = `stockwise_user_data_${userId}`;
@@ -69,11 +78,16 @@ export function getUserStorage(userId: string): UserStorageSchema {
         expenses: [],
         inventoryMovements: [],
         storeMembers: [],
+        customerPayments: [],
       };
       localStorage.setItem(key, JSON.stringify(initial));
       return initial;
     }
-    return JSON.parse(raw);
+    const parsed = JSON.parse(raw);
+    if (!parsed.customerPayments) parsed.customerPayments = [];
+    if (!parsed.staffInvitations) parsed.staffInvitations = [];
+    if (!parsed.staffActivity) parsed.staffActivity = [];
+    return parsed;
   } catch {
     return {
       stores: [],
@@ -86,6 +100,9 @@ export function getUserStorage(userId: string): UserStorageSchema {
       expenses: [],
       inventoryMovements: [],
       storeMembers: [],
+      customerPayments: [],
+      staffInvitations: [],
+      staffActivity: [],
     };
   }
 }
@@ -605,6 +622,9 @@ export async function createSaleWithItems(
     notes?: string | null;
     amountTendered?: number;
     changeDue?: number;
+    amountPaid?: number;
+    balanceDue?: number;
+    dueDate?: string | null;
   },
   items: Array<{
     productId: string;
@@ -616,6 +636,10 @@ export async function createSaleWithItems(
     subtotal: number;
   }>
 ): Promise<Sale> {
+  const isCredit = saleData.paymentMethod === 'credit';
+  const upfrontPaid = isCredit ? Number(saleData.amountPaid || 0) : undefined;
+  const balanceDue = isCredit ? Math.max(0, Number(saleData.totalAmount) - (upfrontPaid || 0)) : undefined;
+
   try {
     // 1. Deduct stock in Supabase
     for (const item of items) {
@@ -669,13 +693,36 @@ export async function createSaleWithItems(
         status: 'completed',
         staff_name: saleData.staffName || null,
         notes: saleData.notes || null,
+        amount_paid: upfrontPaid ?? null,
+        balance_due: balanceDue ?? null,
+        due_date: saleData.dueDate || null,
       })
       .select()
       .single();
 
     if (saleErr) throw saleErr;
 
-    // 3. Insert Sale Items in Supabase
+    // 3. If credit sale with upfront deposit, create initial payment transaction
+    if (isCredit && upfrontPaid && upfrontPaid > 0 && saleData.customerId) {
+      try {
+        await supabase.from('customer_payments').insert({
+          store_id: storeId,
+          customer_id: saleData.customerId,
+          customer_name: saleData.customerName || null,
+          sale_id: sale.id,
+          amount: upfrontPaid,
+          payment_method: 'cash',
+          payment_date: new Date().toISOString(),
+          notes: `Upfront deposit for Credit Sale #${sale.id.slice(0, 8).toUpperCase()}`,
+          reference_id: `DEP-${sale.id.slice(0, 8).toUpperCase()}`,
+          recorded_by: saleData.staffName || 'Cashier',
+        });
+      } catch (payErr) {
+        console.warn('Could not record upfront credit payment in Supabase:', payErr);
+      }
+    }
+
+    // 4. Insert Sale Items in Supabase
     const itemsToInsert = items.map((item) => ({
       sale_id: sale.id,
       product_id: item.productId,
@@ -697,6 +744,8 @@ export async function createSaleWithItems(
       ...sale,
       amount_tendered: saleData.amountTendered,
       change_due: saleData.changeDue,
+      amount_paid: upfrontPaid,
+      balance_due: balanceDue,
     };
   } catch (err) {
     console.warn('Supabase sale creation fallback to user-isolated storage:', err);
@@ -745,6 +794,9 @@ export async function createSaleWithItems(
       notes: saleData.notes || null,
       amount_tendered: saleData.amountTendered,
       change_due: saleData.changeDue,
+      amount_paid: upfrontPaid,
+      balance_due: balanceDue,
+      due_date: saleData.dueDate || null,
       created_at: new Date().toISOString(),
       items: items.map((it, idx) => ({
         id: `item-${Date.now()}-${idx}`,
@@ -759,6 +811,25 @@ export async function createSaleWithItems(
         created_at: new Date().toISOString(),
       })),
     };
+
+    // If credit with upfront deposit, create initial payment record in local storage
+    if (isCredit && upfrontPaid && upfrontPaid > 0 && saleData.customerId) {
+      if (!storage.customerPayments) storage.customerPayments = [];
+      storage.customerPayments.unshift({
+        id: `pay-dep-${Date.now()}`,
+        store_id: storeId,
+        customer_id: saleData.customerId,
+        customer_name: saleData.customerName || null,
+        sale_id: saleId,
+        amount: upfrontPaid,
+        payment_method: 'cash',
+        payment_date: new Date().toISOString(),
+        notes: `Upfront deposit for Credit Sale #${saleId.slice(0, 8).toUpperCase()}`,
+        reference_id: `DEP-${saleId.slice(0, 8).toUpperCase()}`,
+        recorded_by: saleData.staffName || 'Cashier',
+        created_at: new Date().toISOString(),
+      });
+    }
 
     storage.sales.unshift(newSale);
     saveUserStorage(userId, storage);
@@ -986,6 +1057,191 @@ export async function deleteCustomer(customerId: string): Promise<void> {
 }
 
 // ==========================================
+// CUSTOMER PAYMENTS & CREDIT REPAYMENTS
+// ==========================================
+export async function fetchCustomerPayments(storeId: string): Promise<CustomerPayment[]> {
+  try {
+    const { data, error } = await supabase
+      .from('customer_payments')
+      .select('*')
+      .eq('store_id', storeId)
+      .order('payment_date', { ascending: false });
+
+    if (error) throw error;
+    return data || [];
+  } catch {
+    const { storage } = findStorageForStore(storeId);
+    return (storage.customerPayments || []).filter((p) => p.store_id === storeId);
+  }
+}
+
+export async function createCustomerPayment(
+  storeId: string,
+  payment: Omit<CustomerPayment, 'id' | 'created_at'>
+): Promise<CustomerPayment> {
+  const paymentRecord = {
+    ...payment,
+    store_id: storeId,
+    payment_date: payment.payment_date || new Date().toISOString(),
+  };
+
+  try {
+    const { data, error } = await supabase
+      .from('customer_payments')
+      .insert(paymentRecord)
+      .select()
+      .single();
+
+    if (error) throw error;
+    return data;
+  } catch {
+    const { userId, storage } = findStorageForStore(storeId);
+    if (!storage.customerPayments) storage.customerPayments = [];
+
+    const newPayment: CustomerPayment = {
+      ...paymentRecord,
+      id: `pay-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      created_at: new Date().toISOString(),
+    };
+
+    storage.customerPayments.unshift(newPayment);
+    saveUserStorage(userId, storage);
+    return newPayment;
+  }
+}
+
+export async function deleteCustomerPayment(storeId: string, paymentId: string): Promise<void> {
+  try {
+    const { error } = await supabase.from('customer_payments').delete().eq('id', paymentId);
+    if (error) throw error;
+  } catch {
+    const { userId, storage } = findStorageForStore(storeId);
+    if (storage.customerPayments) {
+      storage.customerPayments = storage.customerPayments.filter((p) => p.id !== paymentId);
+      saveUserStorage(userId, storage);
+    }
+  }
+}
+
+/**
+ * Calculates a complete customer debt/credit ledger with chronological running balances.
+ * Never overwrites previous transactions; guarantees:
+ * Outstanding Balance = Total Credit Sales - Total Payments
+ */
+export function calculateCustomerCreditLedger(
+  customerId: string,
+  customerSales: Sale[],
+  customerPayments: CustomerPayment[]
+): {
+  totalSpent: number;
+  totalOrders: number;
+  totalCreditTaken: number;
+  totalRepaid: number;
+  outstandingBalance: number;
+  ledger: CustomerLedgerEntry[];
+} {
+  const filteredSales = customerSales.filter((s) => s.customer_id === customerId);
+  const filteredPayments = customerPayments.filter((p) => p.customer_id === customerId);
+
+  const totalSpent = filteredSales.reduce((sum, s) => sum + Number(s.total_amount || 0), 0);
+  const totalOrders = filteredSales.length;
+
+  const creditSales = filteredSales.filter((s) => s.payment_method === 'credit');
+  const totalCreditTaken = creditSales.reduce((sum, s) => sum + Number(s.total_amount || 0), 0);
+  const totalRepaid = filteredPayments.reduce((sum, p) => sum + Number(p.amount || 0), 0);
+  const outstandingBalance = Math.max(0, Math.round((totalCreditTaken - totalRepaid) * 100) / 100);
+
+  // Build unified chronological transaction entries
+  interface RawEntry {
+    id: string;
+    timestamp: number;
+    date: string;
+    type: 'credit_sale' | 'repayment' | 'initial_payment' | 'cash_sale';
+    reference_id: string;
+    description: string;
+    debit: number;
+    credit: number;
+    payment_method: string;
+    notes?: string | null;
+    sale_id?: string | null;
+  }
+
+  const rawEntries: RawEntry[] = [];
+
+  // Add credit sales
+  for (const s of creditSales) {
+    rawEntries.push({
+      id: `sale-${s.id}`,
+      timestamp: new Date(s.created_at).getTime(),
+      date: s.created_at,
+      type: 'credit_sale',
+      reference_id: `#${s.id.slice(0, 8).toUpperCase()}`,
+      description: `Credit Sale (${s.items?.length || 1} items)`,
+      debit: Number(s.total_amount || 0),
+      credit: 0,
+      payment_method: 'Credit / Pay Later',
+      notes: s.notes,
+      sale_id: s.id,
+    });
+  }
+
+  // Add repayments / payments
+  for (const p of filteredPayments) {
+    const isUpfront = p.notes && p.notes.toLowerCase().includes('upfront');
+    rawEntries.push({
+      id: `pay-${p.id}`,
+      timestamp: new Date(p.payment_date || p.created_at).getTime() + 1,
+      date: p.payment_date || p.created_at,
+      type: isUpfront ? 'initial_payment' : 'repayment',
+      reference_id: p.reference_id || `#${p.id.slice(0, 8).toUpperCase()}`,
+      description: isUpfront ? 'Upfront Deposit at POS' : 'Credit Repayment',
+      debit: 0,
+      credit: Number(p.amount || 0),
+      payment_method: p.payment_method ? p.payment_method.replace('_', ' ').toUpperCase() : 'CASH',
+      notes: p.notes,
+      sale_id: p.sale_id,
+    });
+  }
+
+  // Sort ascending by timestamp to calculate running balance
+  rawEntries.sort((a, b) => {
+    if (a.timestamp !== b.timestamp) return a.timestamp - b.timestamp;
+    // If exact same timestamp, ensure credit sales (debits) come before payments (credits)
+    if (a.type === 'credit_sale' && b.type !== 'credit_sale') return -1;
+    if (b.type === 'credit_sale' && a.type !== 'credit_sale') return 1;
+    return 0;
+  });
+
+  let runningBalance = 0;
+  const ledger: CustomerLedgerEntry[] = rawEntries.map((e) => {
+    runningBalance = Math.round((runningBalance + e.debit - e.credit) * 100) / 100;
+    const safeBalance = Math.max(0, runningBalance);
+    return {
+      id: e.id,
+      date: e.date,
+      type: e.type,
+      reference_id: e.reference_id,
+      description: e.description,
+      debit: e.debit,
+      credit: e.credit,
+      balance: safeBalance,
+      payment_method: e.payment_method,
+      notes: e.notes,
+      sale_id: e.sale_id,
+    };
+  });
+
+  return {
+    totalSpent,
+    totalOrders,
+    totalCreditTaken,
+    totalRepaid,
+    outstandingBalance,
+    ledger: ledger.reverse(), // Most recent at the top
+  };
+}
+
+// ==========================================
 // EXPENSES
 // ==========================================
 export async function fetchExpenses(storeId: string): Promise<Expense[]> {
@@ -1155,6 +1411,32 @@ export async function saveStoreSettings(storeId: string, settings: Partial<Store
 
 export const updateStoreSettings = saveStoreSettings;
 
+// ==========================================
+// GLOBAL INVITATIONS REGISTRY (CROSS-BROWSER/USER LINK LOOKUP)
+// ==========================================
+function getGlobalInvitations(): StaffInvitation[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = localStorage.getItem('stockwise_global_invitations');
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveGlobalInvitations(invs: StaffInvitation[]): void {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem('stockwise_global_invitations', JSON.stringify(invs));
+  } catch (err) {
+    console.warn('Could not save global invitations:', err);
+  }
+}
+
+// ==========================================
+// STAFF MANAGEMENT & INVITATIONS SYSTEM
+// ==========================================
+
 export async function fetchStoreMembers(storeId: string): Promise<StoreMember[]> {
   try {
     const { data, error } = await supabase
@@ -1164,104 +1446,533 @@ export async function fetchStoreMembers(storeId: string): Promise<StoreMember[]>
 
     if (error) throw error;
 
-    return (data || []).map((m: any) => ({
-      ...m,
-      user_email: m.profile?.email || m.email,
-      user_name: m.profile?.full_name || m.full_name,
-    }));
+    return (data || []).map((m: any) => {
+      const role = m.role || 'cashier';
+      const defaultPerms = ROLE_TEMPLATES[role]?.permissions || ['dashboard.view'];
+      return {
+        ...m,
+        status: m.status || 'active',
+        permissions: Array.isArray(m.permissions) && m.permissions.length > 0 ? m.permissions : defaultPerms,
+        user_email: m.profile?.email || m.user_email || m.email,
+        user_name: m.profile?.full_name || m.user_name || m.full_name,
+      };
+    });
   } catch {
     const { storage } = findStorageForStore(storeId);
-    return storage.storeMembers.filter((m) => m.store_id === storeId);
+    return (storage.storeMembers || [])
+      .filter((m) => m.store_id === storeId && m.status !== 'removed')
+      .map((m) => {
+        const role = m.role || 'cashier';
+        const defaultPerms = ROLE_TEMPLATES[role]?.permissions || ['dashboard.view'];
+        return {
+          ...m,
+          status: m.status || 'active',
+          permissions: Array.isArray(m.permissions) && m.permissions.length > 0 ? m.permissions : defaultPerms,
+        };
+      });
   }
 }
 
-export async function addStoreMember(
-  storeId: string, 
-  userIdentifier: string, 
-  role: 'owner' | 'admin' | 'manager' | 'cashier'
-): Promise<StoreMember> {
+export async function fetchStoreInvitations(storeId: string): Promise<StaffInvitation[]> {
   try {
-    let targetUserId = userIdentifier;
-    if (userIdentifier.includes('@')) {
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('id')
-        .eq('email', userIdentifier.toLowerCase().trim())
-        .maybeSingle();
+    const { data, error } = await supabase
+      .from('staff_invitations')
+      .select('*')
+      .eq('store_id', storeId)
+      .order('created_at', { ascending: false });
 
-      if (profile) {
-        targetUserId = profile.id;
+    if (error) throw error;
+    return data || [];
+  } catch {
+    const globalInvs = getGlobalInvitations().filter((i) => i.store_id === storeId);
+    const { storage } = findStorageForStore(storeId);
+    const localInvs = storage.staffInvitations || [];
+    
+    // Merge without duplicates
+    const map = new Map<string, StaffInvitation>();
+    [...globalInvs, ...localInvs].forEach((inv) => map.set(inv.id, inv));
+    return Array.from(map.values()).sort(
+      (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    );
+  }
+}
+
+export async function createStaffInvitation(params: {
+  storeId: string;
+  storeName: string;
+  invitedBy: string;
+  invitedByName: string;
+  name: string;
+  email: string;
+  phone?: string;
+  role: string;
+  permissions: string[];
+  notes?: string;
+}): Promise<{ member: StoreMember; invitation: StaffInvitation }> {
+  const token = generateInvitationToken();
+  const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(); // 7 days expiration
+  const invitationId = `inv-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+  const memberId = `mem-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+
+  const invitation: StaffInvitation = {
+    id: invitationId,
+    store_id: params.storeId,
+    store_name: params.storeName,
+    invited_by: params.invitedBy,
+    invited_by_name: params.invitedByName,
+    name: params.name.trim(),
+    email: params.email.trim().toLowerCase(),
+    phone: params.phone?.trim() || null,
+    role: params.role,
+    permissions: params.permissions,
+    token,
+    status: 'pending',
+    expires_at: expiresAt,
+    created_at: new Date().toISOString(),
+  };
+
+  const member: StoreMember = {
+    id: memberId,
+    store_id: params.storeId,
+    user_id: `pending-${invitationId}`,
+    user_name: params.name.trim(),
+    user_email: params.email.trim().toLowerCase(),
+    phone: params.phone?.trim() || null,
+    role: params.role,
+    status: 'pending',
+    permissions: params.permissions,
+    invited_by: params.invitedBy,
+    invitation_token: token,
+    invitation_expires_at: expiresAt,
+    notes: params.notes?.trim() || null,
+    created_at: new Date().toISOString(),
+  };
+
+  // 1. Try Supabase persistence
+  try {
+    await supabase.from('staff_invitations').insert(invitation);
+    await supabase.from('store_members').insert({
+      id: member.id,
+      store_id: member.store_id,
+      user_id: member.user_id,
+      role: member.role,
+      status: member.status,
+      permissions: member.permissions,
+      invitation_token: member.invitation_token,
+      invitation_expires_at: member.invitation_expires_at,
+    });
+  } catch (err) {
+    console.warn('Supabase staff invitation fallback to local:', err);
+  }
+
+  // 2. Persist in user storage
+  const { userId, storage } = findStorageForStore(params.storeId);
+  if (!storage.storeMembers) storage.storeMembers = [];
+  if (!storage.staffInvitations) storage.staffInvitations = [];
+  
+  storage.storeMembers.unshift(member);
+  storage.staffInvitations.unshift(invitation);
+  saveUserStorage(userId, storage);
+
+  // 3. Save in global invitations registry for link verification
+  const globalInvs = getGlobalInvitations().filter((i) => i.id !== invitation.id);
+  globalInvs.unshift(invitation);
+  saveGlobalInvitations(globalInvs);
+
+  // 4. Log staff activity
+  await logStaffActivity(
+    params.storeId,
+    `Invited ${params.name} as ${formatRoleName(params.role)}`,
+    params.invitedByName,
+    undefined,
+    `Invitation sent to ${params.email} with ${params.permissions.length} granular permissions`
+  );
+
+  return { member, invitation };
+}
+
+export async function resendStaffInvitation(
+  storeId: string,
+  invitationId: string,
+  performerName: string
+): Promise<StaffInvitation> {
+  const { userId, storage } = findStorageForStore(storeId);
+  const invs = storage.staffInvitations || [];
+  const idx = invs.findIndex((i) => i.id === invitationId);
+  
+  const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+  
+  if (idx !== -1) {
+    invs[idx].expires_at = expiresAt;
+    invs[idx].status = 'pending';
+    saveUserStorage(userId, storage);
+
+    // Update global registry
+    const globalInvs = getGlobalInvitations().map((i) =>
+      i.id === invitationId ? { ...i, expires_at: expiresAt, status: 'pending' as const } : i
+    );
+    saveGlobalInvitations(globalInvs);
+
+    // Update member record expiration
+    const memIdx = (storage.storeMembers || []).findIndex((m) => m.invitation_token === invs[idx].token);
+    if (memIdx !== -1) {
+      storage.storeMembers[memIdx].invitation_expires_at = expiresAt;
+      storage.storeMembers[memIdx].status = 'pending';
+      saveUserStorage(userId, storage);
+    }
+
+    await logStaffActivity(
+      storeId,
+      `Resent invitation to ${invs[idx].name} (${invs[idx].email})`,
+      performerName
+    );
+
+    return invs[idx];
+  }
+
+  throw new Error('Invitation record not found');
+}
+
+export async function cancelStaffInvitation(
+  storeId: string,
+  invitationId: string,
+  performerName: string
+): Promise<void> {
+  const { userId, storage } = findStorageForStore(storeId);
+  
+  // Find invitation to get token
+  const inv = (storage.staffInvitations || []).find((i) => i.id === invitationId);
+  if (inv) {
+    inv.status = 'cancelled';
+    storage.staffInvitations = (storage.staffInvitations || []).filter((i) => i.id !== invitationId);
+    storage.storeMembers = (storage.storeMembers || []).filter(
+      (m) => m.invitation_token !== inv.token && m.user_email?.toLowerCase() !== inv.email.toLowerCase()
+    );
+    saveUserStorage(userId, storage);
+
+    // Remove from global registry
+    const globalInvs = getGlobalInvitations().filter((i) => i.id !== invitationId);
+    saveGlobalInvitations(globalInvs);
+
+    await logStaffActivity(
+      storeId,
+      `Cancelled invitation for ${inv.name} (${inv.email})`,
+      performerName
+    );
+  }
+}
+
+export async function lookupStaffInvitation(token: string): Promise<StaffInvitation | null> {
+  if (!token) return null;
+
+  // 1. Check global localStorage registry
+  const globalInvs = getGlobalInvitations();
+  const found = globalInvs.find((i) => i.token === token);
+  if (found) return found;
+
+  // 2. Check Supabase if configured
+  try {
+    const { data } = await supabase
+      .from('staff_invitations')
+      .select('*')
+      .eq('token', token)
+      .maybeSingle();
+
+    if (data) return data;
+  } catch {
+    // ignore
+  }
+
+  // 3. Fallback scan all local user storages
+  if (typeof window !== 'undefined') {
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && key.startsWith('stockwise_user_data_')) {
+        try {
+          const parsed = JSON.parse(localStorage.getItem(key) || '{}');
+          const match = (parsed.staffInvitations || []).find((inv: StaffInvitation) => inv.token === token);
+          if (match) return match;
+        } catch {
+          // ignore
+        }
       }
     }
+  }
 
-    const { data, error } = await supabase
-      .from('store_members')
-      .insert({
-        store_id: storeId,
-        user_id: targetUserId,
-        role,
-      })
-      .select()
-      .single();
+  return null;
+}
 
-    if (error) throw error;
-    return data;
-  } catch {
-    const { userId, storage } = findStorageForStore(storeId);
-    const newMember: StoreMember = {
+export async function acceptStaffInvitation(
+  token: string,
+  userId: string,
+  userEmail: string,
+  userName?: string
+): Promise<{ store: Store; member: StoreMember }> {
+  const invitation = await lookupStaffInvitation(token);
+  if (!invitation) {
+    throw new Error('Invitation not found or invalid.');
+  }
+
+  if (invitation.status === 'accepted') {
+    throw new Error('This invitation has already been accepted.');
+  }
+
+  if (new Date(invitation.expires_at) < new Date()) {
+    throw new Error('This invitation link has expired. Please ask the store owner to send a new invitation.');
+  }
+
+  const storeId = invitation.store_id;
+  const { userId: ownerUserId, storage: ownerStorage } = findStorageForStore(storeId);
+  const store = ownerStorage.stores.find((s) => s.id === storeId);
+
+  if (!store) {
+    throw new Error('Store associated with this invitation was not found.');
+  }
+
+  // Mark invitation as accepted
+  invitation.status = 'accepted';
+  invitation.accepted_at = new Date().toISOString();
+
+  // Update in global invitations registry
+  const globalInvs = getGlobalInvitations().map((i) => (i.id === invitation.id ? invitation : i));
+  saveGlobalInvitations(globalInvs);
+
+  // Update member in owner's store storage
+  let member = (ownerStorage.storeMembers || []).find(
+    (m) => m.invitation_token === token || m.user_email?.toLowerCase() === userEmail.toLowerCase()
+  );
+
+  if (member) {
+    member.user_id = userId;
+    member.status = 'active';
+    member.user_name = userName || invitation.name;
+    member.user_email = userEmail;
+    member.last_active = new Date().toISOString();
+  } else {
+    member = {
       id: `mem-${Date.now()}`,
       store_id: storeId,
-      user_id: `user-${Date.now()}`,
-      role,
-      user_name: userIdentifier.split('@')[0],
-      user_email: userIdentifier.includes('@') ? userIdentifier : `${userIdentifier}@store.local`,
+      user_id: userId,
+      user_name: userName || invitation.name,
+      user_email: userEmail,
+      role: invitation.role,
+      status: 'active',
+      permissions: invitation.permissions,
+      invited_by: invitation.invited_by,
       created_at: new Date().toISOString(),
+      last_active: new Date().toISOString(),
     };
-    storage.storeMembers.push(newMember);
+    ownerStorage.storeMembers.unshift(member);
+  }
+  saveUserStorage(ownerUserId, ownerStorage);
+
+  // Also add the store to the invited staff user's own storage so they see it in their store switcher!
+  const staffStorage = getUserStorage(userId);
+  if (!staffStorage.stores.some((s) => s.id === store.id)) {
+    staffStorage.stores.push(store);
+  }
+  if (!staffStorage.storeMembers.some((m) => m.id === member!.id)) {
+    staffStorage.storeMembers.push(member);
+  }
+  saveUserStorage(userId, staffStorage);
+
+  // Log staff activity
+  await logStaffActivity(
+    storeId,
+    `${userName || userEmail} accepted invitation and joined as ${formatRoleName(invitation.role)}`,
+    userName || userEmail,
+    userEmail,
+    `Account activated with ${invitation.permissions.length} granted permissions`
+  );
+
+  return { store, member };
+}
+
+export async function updateStoreMemberPermissions(
+  storeId: string,
+  memberId: string,
+  role: string,
+  permissions: string[],
+  performerName: string
+): Promise<StoreMember> {
+  const { userId, storage } = findStorageForStore(storeId);
+  const mem = (storage.storeMembers || []).find((m) => m.id === memberId);
+  if (!mem) throw new Error('Staff member not found.');
+
+  mem.role = role;
+  mem.permissions = permissions;
+  saveUserStorage(userId, storage);
+
+  await logStaffActivity(
+    storeId,
+    `Updated permissions for ${mem.user_name || mem.user_email} (${formatRoleName(role)})`,
+    performerName,
+    undefined,
+    `Active permissions: ${permissions.length} features enabled`
+  );
+
+  return mem;
+}
+
+export async function suspendStoreMember(
+  storeId: string,
+  memberId: string,
+  performerName: string
+): Promise<StoreMember> {
+  const { userId, storage } = findStorageForStore(storeId);
+  const mem = (storage.storeMembers || []).find((m) => m.id === memberId);
+  if (!mem) throw new Error('Staff member not found.');
+
+  mem.status = 'suspended';
+  saveUserStorage(userId, storage);
+
+  await logStaffActivity(
+    storeId,
+    `Suspended access for ${mem.user_name || mem.user_email}`,
+    performerName,
+    undefined,
+    'Staff member will be blocked from accessing this store until reactivated'
+  );
+
+  return mem;
+}
+
+export async function reactivateStoreMember(
+  storeId: string,
+  memberId: string,
+  performerName: string
+): Promise<StoreMember> {
+  const { userId, storage } = findStorageForStore(storeId);
+  const mem = (storage.storeMembers || []).find((m) => m.id === memberId);
+  if (!mem) throw new Error('Staff member not found.');
+
+  mem.status = 'active';
+  saveUserStorage(userId, storage);
+
+  await logStaffActivity(
+    storeId,
+    `Reactivated store access for ${mem.user_name || mem.user_email}`,
+    performerName,
+    undefined,
+    'Staff member can now access permitted store features'
+  );
+
+  return mem;
+}
+
+export async function removeStoreMember(
+  memberId: string,
+  storeId?: string,
+  performerName?: string
+): Promise<void> {
+  const curUserId = getCurrentUserId();
+  const { userId, storage } = storeId ? findStorageForStore(storeId) : { userId: curUserId, storage: getUserStorage(curUserId) };
+  
+  const mem = (storage.storeMembers || []).find((m) => m.id === memberId);
+  if (mem) {
+    // Soft removal / membership revocation to preserve all historical sales and credit payments!
+    mem.status = 'removed';
+    storage.storeMembers = (storage.storeMembers || []).filter((m) => m.id !== memberId);
     saveUserStorage(userId, storage);
-    return newMember;
+
+    if (storeId) {
+      await logStaffActivity(
+        storeId,
+        `Removed staff access for ${mem.user_name || mem.user_email}`,
+        performerName || 'Store Owner',
+        undefined,
+        'Historical sales, inventory logs, and customer transactions remain intact'
+      );
+    }
   }
 }
 
-export async function updateStoreMemberRole(
-  memberId: string, 
+// Legacy helper compatibility
+export const updateStoreMemberRole = async (
+  memberId: string,
   role: 'owner' | 'admin' | 'manager' | 'cashier'
-): Promise<StoreMember> {
+): Promise<StoreMember> => {
+  const curUserId = getCurrentUserId();
+  const storage = getUserStorage(curUserId);
+  const mem = storage.storeMembers.find((m) => m.id === memberId);
+  if (mem) {
+    mem.role = role;
+    mem.permissions = ROLE_TEMPLATES[role]?.permissions || ['dashboard.view'];
+    saveUserStorage(curUserId, storage);
+    return mem;
+  }
+  throw new Error('Member not found');
+};
+
+export const addStoreMember = async (
+  storeId: string,
+  userIdentifier: string,
+  role: 'owner' | 'admin' | 'manager' | 'cashier'
+): Promise<StoreMember> => {
+  const { member } = await createStaffInvitation({
+    storeId,
+    storeName: 'Store',
+    invitedBy: getCurrentUserId(),
+    invitedByName: 'Store Owner',
+    name: userIdentifier.split('@')[0],
+    email: userIdentifier.includes('@') ? userIdentifier : `${userIdentifier}@store.local`,
+    role,
+    permissions: ROLE_TEMPLATES[role]?.permissions || ['dashboard.view'],
+  });
+  return member;
+};
+
+// ==========================================
+// STAFF ACTIVITY LOGGING
+// ==========================================
+
+export async function fetchStaffActivity(storeId: string): Promise<StaffActivity[]> {
   try {
     const { data, error } = await supabase
-      .from('store_members')
-      .update({ role })
-      .eq('id', memberId)
-      .select()
-      .single();
+      .from('staff_activity')
+      .select('*')
+      .eq('store_id', storeId)
+      .order('created_at', { ascending: false });
 
     if (error) throw error;
-    return data;
+    return data || [];
   } catch {
-    const curUserId = getCurrentUserId();
-    const storage = getUserStorage(curUserId);
-    const idx = storage.storeMembers.findIndex((m) => m.id === memberId);
-    if (idx !== -1) {
-      storage.storeMembers[idx] = { ...storage.storeMembers[idx], role };
-      saveUserStorage(curUserId, storage);
-      return storage.storeMembers[idx];
-    }
-    throw new Error('Member not found');
+    const { storage } = findStorageForStore(storeId);
+    return (storage.staffActivity || []).filter((a) => a.store_id === storeId);
   }
 }
 
-export async function removeStoreMember(memberId: string): Promise<void> {
-  try {
-    const { error } = await supabase
-      .from('store_members')
-      .delete()
-      .eq('id', memberId);
+export async function logStaffActivity(
+  storeId: string,
+  action: string,
+  staffName: string,
+  staffEmail?: string,
+  details?: string
+): Promise<StaffActivity> {
+  const entry: StaffActivity = {
+    id: `act-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+    store_id: storeId,
+    staff_name: staffName,
+    staff_email: staffEmail,
+    action,
+    details,
+    created_at: new Date().toISOString(),
+  };
 
-    if (error) throw error;
+  try {
+    await supabase.from('staff_activity').insert(entry);
   } catch {
-    const curUserId = getCurrentUserId();
-    const storage = getUserStorage(curUserId);
-    storage.storeMembers = storage.storeMembers.filter((m) => m.id !== memberId);
-    saveUserStorage(curUserId, storage);
+    // ignore
   }
+
+  const { userId, storage } = findStorageForStore(storeId);
+  if (!storage.staffActivity) storage.staffActivity = [];
+  storage.staffActivity.unshift(entry);
+  // Cap at 200 activity logs
+  if (storage.staffActivity.length > 200) {
+    storage.staffActivity = storage.staffActivity.slice(0, 200);
+  }
+  saveUserStorage(userId, storage);
+
+  return entry;
 }

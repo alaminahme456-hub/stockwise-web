@@ -100,6 +100,7 @@ export const TransactionsView: React.FC<{ onViewSaleDetail?: (s: Sale) => void }
             <option value="cash">Cash</option>
             <option value="bank_transfer">Bank Transfer</option>
             <option value="pos">POS Terminal</option>
+            <option value="credit">Credit (Pay Later)</option>
             <option value="mixed">Mixed Payment</option>
           </select>
         </div>
@@ -136,9 +137,15 @@ export const TransactionsView: React.FC<{ onViewSaleDetail?: (s: Sale) => void }
                     <span className="font-semibold text-slate-800 text-sm">
                       {sale.customer_name || 'Walk-in Customer'}
                     </span>
-                    <span className="px-2 py-0.5 rounded-full text-xs font-medium capitalize bg-slate-100 text-slate-700">
-                      {sale.payment_method.replace('_', ' ')}
-                    </span>
+                    {sale.payment_method === 'credit' ? (
+                      <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-amber-100 text-amber-900 border border-amber-200">
+                        Credit (Pay Later)
+                      </span>
+                    ) : (
+                      <span className="px-2 py-0.5 rounded-full text-xs font-medium capitalize bg-slate-100 text-slate-700">
+                        {sale.payment_method.replace('_', ' ')}
+                      </span>
+                    )}
                   </div>
 
                   {/* Unboxed Metadata */}
@@ -148,6 +155,12 @@ export const TransactionsView: React.FC<{ onViewSaleDetail?: (s: Sale) => void }
                     <span>Staff: <strong className="text-slate-700">{sale.staff_name || 'Cashier'}</strong></span>
                     <span aria-hidden="true" className="text-slate-300">·</span>
                     <span>{totalCount} {totalCount === 1 ? 'item' : 'items'}</span>
+                    {sale.payment_method === 'credit' && sale.amount_paid !== undefined && sale.amount_paid > 0 && (
+                      <>
+                        <span aria-hidden="true" className="text-slate-300">·</span>
+                        <span className="text-emerald-700 font-medium">Upfront: {formatCurrency(sale.amount_paid, currency)}</span>
+                      </>
+                    )}
                   </div>
                 </div>
 
@@ -157,8 +170,8 @@ export const TransactionsView: React.FC<{ onViewSaleDetail?: (s: Sale) => void }
                     <div className="font-bold text-slate-900 font-mono text-base sm:text-lg">
                       {formatCurrency(sale.total_amount, currency)}
                     </div>
-                    <div className="text-[11px] text-emerald-600 font-medium">
-                      Completed
+                    <div className={`text-[11px] font-medium ${sale.payment_method === 'credit' ? 'text-amber-700' : 'text-emerald-600'}`}>
+                      {sale.payment_method === 'credit' ? 'Credit Sale' : 'Completed'}
                     </div>
                   </div>
 
@@ -254,9 +267,31 @@ export const TransactionsView: React.FC<{ onViewSaleDetail?: (s: Sale) => void }
                   </div>
                 )}
                 <div className="flex justify-between text-sm font-bold text-slate-900 pt-1 border-t border-slate-200">
-                  <span>Total Paid:</span>
+                  <span>{viewingSale.payment_method === 'credit' ? 'TOTAL SALE:' : 'TOTAL PAID:'}</span>
                   <span className="text-blue-600">{formatCurrency(viewingSale.total_amount, currency)}</span>
                 </div>
+                {viewingSale.payment_method === 'credit' && (
+                  <div className="mt-2 p-3 bg-amber-50 rounded-xl border border-amber-200 text-left text-xs space-y-1">
+                    <div className="flex justify-between text-slate-700">
+                      <span>Upfront Paid at Checkout:</span>
+                      <span className="font-semibold text-emerald-700">
+                        {formatCurrency(viewingSale.amount_paid || 0, currency)}
+                      </span>
+                    </div>
+                    <div className="flex justify-between font-bold text-amber-950 pt-1 border-t border-amber-200/60">
+                      <span>Outstanding Debt Added to Account:</span>
+                      <span className="font-mono text-amber-900">
+                        {formatCurrency(viewingSale.balance_due ?? Math.max(0, viewingSale.total_amount - (viewingSale.amount_paid || 0)), currency)}
+                      </span>
+                    </div>
+                    {viewingSale.due_date && (
+                      <div className="flex justify-between text-[11px] text-slate-500 pt-0.5">
+                        <span>Promised Repayment Date:</span>
+                        <span>{formatDate(viewingSale.due_date)}</span>
+                      </div>
+                    )}
+                  </div>
+                )}
                 {viewingSale.payment_method === 'cash' && viewingSale.amount_tendered !== undefined && (
                   <>
                     <div className="flex justify-between text-slate-600 pt-1 border-t border-dashed border-slate-200">

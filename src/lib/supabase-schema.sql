@@ -117,10 +117,13 @@ CREATE TABLE IF NOT EXISTS public.sales (
     discount NUMERIC(12,2) DEFAULT 0.00 NOT NULL,
     tax NUMERIC(12,2) DEFAULT 0.00 NOT NULL,
     total_amount NUMERIC(12,2) NOT NULL,
-    payment_method TEXT CHECK (payment_method IN ('cash', 'bank_transfer', 'pos', 'mixed')) NOT NULL,
+    payment_method TEXT CHECK (payment_method IN ('cash', 'bank_transfer', 'pos', 'mixed', 'credit')) NOT NULL,
     status TEXT DEFAULT 'completed' CHECK (status IN ('completed', 'refunded', 'cancelled')) NOT NULL,
     staff_name TEXT,
     notes TEXT,
+    amount_paid NUMERIC(12,2) DEFAULT 0.00,
+    balance_due NUMERIC(12,2) DEFAULT 0.00,
+    due_date TIMESTAMPTZ,
     created_at TIMESTAMPTZ DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
 );
 
@@ -304,6 +307,33 @@ CREATE POLICY "Store members can view settings" ON public.store_settings FOR SEL
 CREATE POLICY "Store members can insert/update settings" ON public.store_settings FOR ALL 
   USING (public.is_store_member(store_id));
 
+-- 14. Customer Payments Table (Credit repayments and account settlements)
+CREATE TABLE IF NOT EXISTS public.customer_payments (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    store_id UUID REFERENCES public.stores(id) ON DELETE CASCADE NOT NULL,
+    customer_id UUID REFERENCES public.customers(id) ON DELETE CASCADE NOT NULL,
+    customer_name TEXT,
+    sale_id UUID REFERENCES public.sales(id) ON DELETE SET NULL,
+    amount NUMERIC(12,2) NOT NULL,
+    payment_method TEXT DEFAULT 'cash' CHECK (payment_method IN ('cash', 'bank_transfer', 'pos', 'card', 'other')) NOT NULL,
+    payment_date TIMESTAMPTZ DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL,
+    notes TEXT,
+    reference_id TEXT,
+    recorded_by TEXT,
+    created_at TIMESTAMPTZ DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
+);
+
+-- Customer Payments Policies
+ALTER TABLE public.customer_payments ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Store members can view customer_payments" ON public.customer_payments FOR SELECT 
+  USING (public.is_store_member(store_id));
+CREATE POLICY "Store members can insert customer_payments" ON public.customer_payments FOR INSERT 
+  WITH CHECK (public.is_store_member(store_id));
+CREATE POLICY "Store members can update customer_payments" ON public.customer_payments FOR UPDATE 
+  USING (public.is_store_member(store_id));
+CREATE POLICY "Store members can delete customer_payments" ON public.customer_payments FOR DELETE 
+  USING (public.is_store_member(store_id));
+
 -- ==============================================================================
 -- Realtime Replication
 -- ==============================================================================
@@ -315,6 +345,7 @@ BEGIN
   ALTER PUBLICATION supabase_realtime ADD TABLE public.sale_items;
   ALTER PUBLICATION supabase_realtime ADD TABLE public.expenses;
   ALTER PUBLICATION supabase_realtime ADD TABLE public.customers;
+  ALTER PUBLICATION supabase_realtime ADD TABLE public.customer_payments;
   ALTER PUBLICATION supabase_realtime ADD TABLE public.stores;
 EXCEPTION
   WHEN others THEN NULL;

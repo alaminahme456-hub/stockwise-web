@@ -32,12 +32,44 @@ export const Sidebar: React.FC<SidebarProps> = ({
   mobileOpen,
   onCloseMobile,
 }) => {
-  const { products } = useStore();
+  const { products, hasPermission, isStoreOwner } = useStore();
 
   // Compute low stock count for inventory badge
   const lowStockCount = products.filter(
     (p) => Number(p.current_stock) <= Number(p.min_stock_level) && p.status === 'active'
   ).length;
+
+  const isTabAllowed = (tabId: NavigationTab): boolean => {
+    if (isStoreOwner) return true;
+    switch (tabId) {
+      case 'dashboard':
+        return hasPermission('dashboard.view');
+      case 'products':
+        return hasPermission('products.view');
+      case 'inventory':
+        return hasPermission('products.view') || hasPermission('products.adjust_stock');
+      case 'pos':
+        return hasPermission('sales.create') || hasPermission('sales.view');
+      case 'customers':
+        return hasPermission('customers.view') || hasPermission('credit.view');
+      case 'suppliers':
+        return hasPermission('products.edit') || hasPermission('products.create');
+      case 'transactions':
+        return hasPermission('sales.view');
+      case 'expenses':
+        return hasPermission('expenses.view');
+      case 'reports':
+        return hasPermission('reports.view');
+      case 'staff':
+        return hasPermission('staff.view');
+      case 'stores':
+        return true;
+      case 'settings':
+        return hasPermission('settings.view');
+      default:
+        return false;
+    }
+  };
 
   const navItems: Array<{
     id: NavigationTab;
@@ -64,7 +96,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     { id: 'staff', label: 'Staff', icon: UserCheck },
     { id: 'stores', label: 'My Stores', icon: Building2 },
     { id: 'settings', label: 'Settings', icon: Settings },
-  ];
+  ].filter((item) => isTabAllowed(item.id));
 
   const sidebarContent = (
     <div className="flex flex-col h-full bg-slate-900 text-slate-300 w-64 border-r border-slate-800">

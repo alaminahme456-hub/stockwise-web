@@ -32,18 +32,45 @@ import {
   LogOut,
   Check,
   Database,
-  ExternalLink
+  ExternalLink,
+  Clock,
+  Lock
 } from 'lucide-react';
 import { DateRangeFilter, NavigationTab, Sale } from '../types';
 
 interface DashboardViewProps {
-  onNavigate: (tab: NavigationTab) => void;
+  onNavigate: (tab: NavigationTab, customerId?: string) => void;
   onViewSaleDetail?: (sale: Sale) => void;
 }
 
 export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onViewSaleDetail }) => {
-  const { currentStore, sales, products, customers, expenses, loadingData, stores, setCurrentStore } = useStore();
+  const { 
+    currentStore, 
+    sales, 
+    products, 
+    customers, 
+    expenses, 
+    customerPayments, 
+    loadingData, 
+    stores, 
+    setCurrentStore,
+    hasPermission,
+    isStoreOwner
+  } = useStore();
   const { user, profile, signOut } = useAuth();
+
+  const canViewRevenue = isStoreOwner || hasPermission('financials.view_revenue');
+  const canViewProfit = isStoreOwner || hasPermission('financials.view_profit');
+  const canViewExpenses = isStoreOwner || hasPermission('financials.view_expenses');
+  const canViewReports = isStoreOwner || hasPermission('reports.view');
+  const canViewStaff = isStoreOwner || hasPermission('staff.view');
+  const canViewSettings = isStoreOwner || hasPermission('settings.view');
+  const canViewCredit = isStoreOwner || hasPermission('credit.view');
+  const canViewCustomers = isStoreOwner || hasPermission('customers.view');
+  const canViewProducts = isStoreOwner || hasPermission('products.view');
+  const canAdjustStock = isStoreOwner || hasPermission('products.adjust_stock');
+  const canCreateSale = isStoreOwner || hasPermission('sales.create');
+  const canViewSales = isStoreOwner || hasPermission('sales.view');
 
   const [dateRange, setDateRange] = useState<DateRangeFilter>('month');
   const [subscriptionModalOpen, setSubscriptionModalOpen] = useState(false);
@@ -138,6 +165,94 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onView
     return periodSales - totalCogs - totalExpensesAmount;
   }, [filteredSales, totalCogs, totalExpensesAmount]);
 
+  // Customer Credit Overview
+  const creditOverview = useMemo(() => {
+    const creditSales = sales.filter((s) => s.payment_method === 'credit');
+    const totalCreditIssued = creditSales.reduce((sum, s) => sum + Number(s.total_amount || 0), 0);
+    const totalRepaymentsReceived = customerPayments.reduce((sum, p) => sum + Number(p.amount || 0), 0);
+    const totalOutstandingCredit = Math.max(0, Math.round((totalCreditIssued - totalRepaymentsReceived) * 100) / 100);
+
+    // Group by customer to find customers with outstanding balances
+    const debtors: {
+      customerId: string;
+      customerName: string;
+      phone?: string | null;
+      creditTaken: number;
+      repaid: number;
+      outstandingBalance: number;
+    }[] = [];
+
+    customers.forEach((c) => {
+      const custSales = creditSales.filter((s) => s.customer_id === c.id);
+      const custPayments = customerPayments.filter((p) => p.customer_id === c.id);
+      const creditTaken = custSales.reduce((sum, s) => sum + Number(s.total_amount || 0), 0);
+      const repaid = custPayments.reduce((sum, p) => sum + Number(p.amount || 0), 0);
+      const balance = Math.max(0, Math.round((creditTaken - repaid) * 100) / 100);
+
+      if (balance > 0) {
+        debtors.push({
+          customerId: c.id,
+          customerName: c.name,
+          phone: c.phone,
+          creditTaken,
+          repaid,
+          outstandingBalance: balance,
+        });
+      }
+    });
+
+    debtors.sort((a, b) => b.outstandingBalance - a.outstandingBalance);
+
+    // Recent credit transactions: combine recent credit sales and customer repayments
+    interface CreditTx {
+      id: string;
+      date: string;
+      type: 'credit_sale' | 'repayment';
+      customerName: string;
+      customerId?: string | null;
+      amount: number;
+      reference: string;
+      notes?: string | null;
+    }
+
+    const txs: CreditTx[] = [
+      ...creditSales.map((s) => ({
+        id: `sale-${s.id}`,
+        date: s.created_at,
+        type: 'credit_sale' as const,
+        customerName: s.customer_name || 'Customer',
+        customerId: s.customer_id,
+        amount: Number(s.total_amount || 0),
+        reference: `#${s.id.slice(0, 8).toUpperCase()}`,
+        notes: s.notes,
+      })),
+      ...customerPayments.map((p) => {
+        const matchingCust = customers.find((c) => c.id === p.customer_id);
+        return {
+          id: `pay-${p.id}`,
+          date: p.payment_date || p.created_at,
+          type: 'repayment' as const,
+          customerName: p.customer_name || matchingCust?.name || 'Customer',
+          customerId: p.customer_id,
+          amount: Number(p.amount || 0),
+          reference: p.reference_id || `#${p.id.slice(0, 8).toUpperCase()}`,
+          notes: p.notes,
+        };
+      }),
+    ];
+
+    txs.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+    return {
+      totalCreditIssued,
+      totalRepaymentsReceived,
+      totalOutstandingCredit,
+      debtorsCount: debtors.length,
+      debtors,
+      recentCreditTransactions: txs.slice(0, 6),
+    };
+  }, [sales, customerPayments, customers]);
+
   // Inventory stats
   const totalProductsCount = products.length;
   const lowStockProducts = useMemo(() => {
@@ -225,8 +340,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onView
       <div className="grid grid-cols-2 gap-3 sm:gap-4.5">
         {/* Metric 1: Today's Revenue */}
         <div 
-          onClick={() => onNavigate('transactions')}
-          className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200/90 shadow-xs hover:border-blue-300 hover:shadow-sm transition cursor-pointer flex flex-col justify-between"
+          onClick={() => canViewSales && onNavigate('transactions')}
+          className={`bg-white p-4 sm:p-5 rounded-2xl border border-slate-200/90 shadow-xs transition flex flex-col justify-between ${
+            canViewSales ? 'hover:border-blue-300 hover:shadow-sm cursor-pointer' : 'cursor-default'
+          }`}
         >
           <div className="flex items-center justify-between gap-2">
             <span className="text-xs sm:text-sm font-semibold text-slate-600">Today&apos;s Revenue</span>
@@ -235,8 +352,15 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onView
             </div>
           </div>
           <div className="mt-2 sm:mt-3">
-            <div className="text-lg sm:text-2xl font-black text-slate-900 tracking-tight">
-              {formatCurrency(todaySalesAmount, currency)}
+            <div className="text-lg sm:text-2xl font-black text-slate-900 tracking-tight flex items-center gap-1.5">
+              {canViewRevenue ? (
+                formatCurrency(todaySalesAmount, currency)
+              ) : (
+                <span className="text-slate-400 font-mono tracking-widest text-sm flex items-center gap-1">
+                  <Lock className="w-3.5 h-3.5 text-slate-400" />
+                  <span>Restricted</span>
+                </span>
+              )}
             </div>
             <div className="mt-1 text-[11px] sm:text-xs text-emerald-600 font-medium flex items-center gap-1">
               <span>{todaySalesCount} {todaySalesCount === 1 ? 'sale' : 'sales'} today</span>
@@ -246,8 +370,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onView
 
         {/* Metric 2: Total Sales */}
         <div 
-          onClick={() => onNavigate('transactions')}
-          className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200/90 shadow-xs hover:border-blue-300 hover:shadow-sm transition cursor-pointer flex flex-col justify-between"
+          onClick={() => canViewSales && onNavigate('transactions')}
+          className={`bg-white p-4 sm:p-5 rounded-2xl border border-slate-200/90 shadow-xs transition flex flex-col justify-between ${
+            canViewSales ? 'hover:border-blue-300 hover:shadow-sm cursor-pointer' : 'cursor-default'
+          }`}
         >
           <div className="flex items-center justify-between gap-2">
             <span className="text-xs sm:text-sm font-semibold text-slate-600">Total Sales</span>
@@ -256,8 +382,15 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onView
             </div>
           </div>
           <div className="mt-2 sm:mt-3">
-            <div className="text-lg sm:text-2xl font-black text-slate-900 tracking-tight">
-              {formatCurrency(totalSalesAmount, currency)}
+            <div className="text-lg sm:text-2xl font-black text-slate-900 tracking-tight flex items-center gap-1.5">
+              {canViewRevenue ? (
+                formatCurrency(totalSalesAmount, currency)
+              ) : (
+                <span className="text-slate-400 font-mono tracking-widest text-sm flex items-center gap-1">
+                  <Lock className="w-3.5 h-3.5 text-slate-400" />
+                  <span>Restricted</span>
+                </span>
+              )}
             </div>
             <div className="mt-1 text-[11px] sm:text-xs text-slate-500 font-medium">
               <span>{sales.length} lifetime orders</span>
@@ -267,8 +400,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onView
 
         {/* Metric 3: Total Products */}
         <div 
-          onClick={() => onNavigate('products')}
-          className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200/90 shadow-xs hover:border-blue-300 hover:shadow-sm transition cursor-pointer flex flex-col justify-between"
+          onClick={() => canViewProducts && onNavigate('products')}
+          className={`bg-white p-4 sm:p-5 rounded-2xl border border-slate-200/90 shadow-xs transition flex flex-col justify-between ${
+            canViewProducts ? 'hover:border-blue-300 hover:shadow-sm cursor-pointer' : 'cursor-default'
+          }`}
         >
           <div className="flex items-center justify-between gap-2">
             <span className="text-xs sm:text-sm font-semibold text-slate-600">Total Products</span>
@@ -288,8 +423,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onView
 
         {/* Metric 4: Low Stock Alert */}
         <div 
-          onClick={() => onNavigate('inventory')}
-          className="bg-white p-4 sm:p-5 rounded-2xl border border-amber-200/90 bg-amber-50/20 shadow-xs hover:border-amber-400 hover:shadow-sm transition cursor-pointer flex flex-col justify-between"
+          onClick={() => (canViewProducts || canAdjustStock) && onNavigate('inventory')}
+          className={`bg-white p-4 sm:p-5 rounded-2xl border border-amber-200/90 bg-amber-50/20 shadow-xs transition flex flex-col justify-between ${
+            (canViewProducts || canAdjustStock) ? 'hover:border-amber-400 hover:shadow-sm cursor-pointer' : 'cursor-default'
+          }`}
         >
           <div className="flex items-center justify-between gap-2">
             <span className="text-xs sm:text-sm font-semibold text-amber-900">Low Stock Alert</span>
@@ -315,7 +452,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onView
       </div>
 
       {/* ======================================================== */}
-      {/* 4. MAIN MENU SECTION WITH 9 GRID BUTTONS + SUBSCRIPTION  */}
+      {/* 4. MAIN MENU SECTION WITH PERMISSION-FILTERED BUTTONS     */}
       {/* ======================================================== */}
       <div className="space-y-3.5">
         <div className="flex items-center justify-between">
@@ -323,142 +460,160 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onView
           <span className="text-xs text-slate-400 font-medium">Module Shortcuts</span>
         </div>
 
-        {/* 9 Grid Buttons */}
-        <div className="grid grid-cols-3 gap-2.5 sm:gap-3.5">
+        {/* Dynamic Grid Buttons */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 sm:gap-3.5">
           {/* 1. New Sale (POS) */}
-          <button
-            type="button"
-            id="menu-btn-pos"
-            onClick={() => onNavigate('pos')}
-            className="p-3 sm:p-4 rounded-2xl bg-white border border-slate-200/90 shadow-xs hover:border-blue-400 hover:shadow-md transition text-center flex flex-col items-center justify-center gap-2 group active:scale-95 cursor-pointer"
-          >
-            <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-xl bg-blue-50 text-blue-600 group-hover:bg-blue-600 group-hover:text-white transition flex items-center justify-center">
-              <ShoppingCart className="w-5 h-5 sm:w-6 sm:h-6" />
-            </div>
-            <span className="text-xs sm:text-sm font-semibold text-slate-800 group-hover:text-blue-600 transition">
-              New Sale (POS)
-            </span>
-          </button>
+          {(canCreateSale || canViewSales) && (
+            <button
+              type="button"
+              id="menu-btn-pos"
+              onClick={() => onNavigate('pos')}
+              className="p-3 sm:p-4 rounded-2xl bg-white border border-slate-200/90 shadow-xs hover:border-blue-400 hover:shadow-md transition text-center flex flex-col items-center justify-center gap-2 group active:scale-95 cursor-pointer"
+            >
+              <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-xl bg-blue-50 text-blue-600 group-hover:bg-blue-600 group-hover:text-white transition flex items-center justify-center">
+                <ShoppingCart className="w-5 h-5 sm:w-6 sm:h-6" />
+              </div>
+              <span className="text-xs sm:text-sm font-semibold text-slate-800 group-hover:text-blue-600 transition">
+                New Sale (POS)
+              </span>
+            </button>
+          )}
 
           {/* 2. Products */}
-          <button
-            type="button"
-            id="menu-btn-products"
-            onClick={() => onNavigate('products')}
-            className="p-3 sm:p-4 rounded-2xl bg-white border border-slate-200/90 shadow-xs hover:border-indigo-400 hover:shadow-md transition text-center flex flex-col items-center justify-center gap-2 group active:scale-95 cursor-pointer"
-          >
-            <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-xl bg-indigo-50 text-indigo-600 group-hover:bg-indigo-600 group-hover:text-white transition flex items-center justify-center">
-              <Package className="w-5 h-5 sm:w-6 sm:h-6" />
-            </div>
-            <span className="text-xs sm:text-sm font-semibold text-slate-800 group-hover:text-indigo-600 transition">
-              Products
-            </span>
-          </button>
+          {canViewProducts && (
+            <button
+              type="button"
+              id="menu-btn-products"
+              onClick={() => onNavigate('products')}
+              className="p-3 sm:p-4 rounded-2xl bg-white border border-slate-200/90 shadow-xs hover:border-indigo-400 hover:shadow-md transition text-center flex flex-col items-center justify-center gap-2 group active:scale-95 cursor-pointer"
+            >
+              <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-xl bg-indigo-50 text-indigo-600 group-hover:bg-indigo-600 group-hover:text-white transition flex items-center justify-center">
+                <Package className="w-5 h-5 sm:w-6 sm:h-6" />
+              </div>
+              <span className="text-xs sm:text-sm font-semibold text-slate-800 group-hover:text-indigo-600 transition">
+                Products
+              </span>
+            </button>
+          )}
 
           {/* 3. Inventory */}
-          <button
-            type="button"
-            id="menu-btn-inventory"
-            onClick={() => onNavigate('inventory')}
-            className="p-3 sm:p-4 rounded-2xl bg-white border border-slate-200/90 shadow-xs hover:border-amber-400 hover:shadow-md transition text-center flex flex-col items-center justify-center gap-2 group active:scale-95 cursor-pointer"
-          >
-            <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-xl bg-amber-50 text-amber-600 group-hover:bg-amber-600 group-hover:text-white transition flex items-center justify-center">
-              <Layers className="w-5 h-5 sm:w-6 sm:h-6" />
-            </div>
-            <span className="text-xs sm:text-sm font-semibold text-slate-800 group-hover:text-amber-700 transition">
-              Inventory
-            </span>
-          </button>
+          {(canViewProducts || canAdjustStock) && (
+            <button
+              type="button"
+              id="menu-btn-inventory"
+              onClick={() => onNavigate('inventory')}
+              className="p-3 sm:p-4 rounded-2xl bg-white border border-slate-200/90 shadow-xs hover:border-amber-400 hover:shadow-md transition text-center flex flex-col items-center justify-center gap-2 group active:scale-95 cursor-pointer"
+            >
+              <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-xl bg-amber-50 text-amber-600 group-hover:bg-amber-600 group-hover:text-white transition flex items-center justify-center">
+                <Layers className="w-5 h-5 sm:w-6 sm:h-6" />
+              </div>
+              <span className="text-xs sm:text-sm font-semibold text-slate-800 group-hover:text-amber-700 transition">
+                Inventory
+              </span>
+            </button>
+          )}
 
           {/* 4. Sales History */}
-          <button
-            type="button"
-            id="menu-btn-sales-history"
-            onClick={() => onNavigate('transactions')}
-            className="p-3 sm:p-4 rounded-2xl bg-white border border-slate-200/90 shadow-xs hover:border-emerald-400 hover:shadow-md transition text-center flex flex-col items-center justify-center gap-2 group active:scale-95 cursor-pointer"
-          >
-            <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-xl bg-emerald-50 text-emerald-600 group-hover:bg-emerald-600 group-hover:text-white transition flex items-center justify-center">
-              <Receipt className="w-5 h-5 sm:w-6 sm:h-6" />
-            </div>
-            <span className="text-xs sm:text-sm font-semibold text-slate-800 group-hover:text-emerald-700 transition">
-              Sales History
-            </span>
-          </button>
+          {canViewSales && (
+            <button
+              type="button"
+              id="menu-btn-sales-history"
+              onClick={() => onNavigate('transactions')}
+              className="p-3 sm:p-4 rounded-2xl bg-white border border-slate-200/90 shadow-xs hover:border-emerald-400 hover:shadow-md transition text-center flex flex-col items-center justify-center gap-2 group active:scale-95 cursor-pointer"
+            >
+              <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-xl bg-emerald-50 text-emerald-600 group-hover:bg-emerald-600 group-hover:text-white transition flex items-center justify-center">
+                <Receipt className="w-5 h-5 sm:w-6 sm:h-6" />
+              </div>
+              <span className="text-xs sm:text-sm font-semibold text-slate-800 group-hover:text-emerald-700 transition">
+                Sales History
+              </span>
+            </button>
+          )}
 
           {/* 5. Reports */}
-          <button
-            type="button"
-            id="menu-btn-reports"
-            onClick={() => onNavigate('reports')}
-            className="p-3 sm:p-4 rounded-2xl bg-white border border-slate-200/90 shadow-xs hover:border-cyan-400 hover:shadow-md transition text-center flex flex-col items-center justify-center gap-2 group active:scale-95 cursor-pointer"
-          >
-            <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-xl bg-cyan-50 text-cyan-600 group-hover:bg-cyan-600 group-hover:text-white transition flex items-center justify-center">
-              <BarChart3 className="w-5 h-5 sm:w-6 sm:h-6" />
-            </div>
-            <span className="text-xs sm:text-sm font-semibold text-slate-800 group-hover:text-cyan-700 transition">
-              Reports
-            </span>
-          </button>
+          {canViewReports && (
+            <button
+              type="button"
+              id="menu-btn-reports"
+              onClick={() => onNavigate('reports')}
+              className="p-3 sm:p-4 rounded-2xl bg-white border border-slate-200/90 shadow-xs hover:border-cyan-400 hover:shadow-md transition text-center flex flex-col items-center justify-center gap-2 group active:scale-95 cursor-pointer"
+            >
+              <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-xl bg-cyan-50 text-cyan-600 group-hover:bg-cyan-600 group-hover:text-white transition flex items-center justify-center">
+                <BarChart3 className="w-5 h-5 sm:w-6 sm:h-6" />
+              </div>
+              <span className="text-xs sm:text-sm font-semibold text-slate-800 group-hover:text-cyan-700 transition">
+                Reports
+              </span>
+            </button>
+          )}
 
           {/* 6. Settings */}
-          <button
-            type="button"
-            id="menu-btn-settings"
-            onClick={() => onNavigate('settings')}
-            className="p-3 sm:p-4 rounded-2xl bg-white border border-slate-200/90 shadow-xs hover:border-slate-400 hover:shadow-md transition text-center flex flex-col items-center justify-center gap-2 group active:scale-95 cursor-pointer"
-          >
-            <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-xl bg-slate-100 text-slate-700 group-hover:bg-slate-800 group-hover:text-white transition flex items-center justify-center">
-              <Settings className="w-5 h-5 sm:w-6 sm:h-6" />
-            </div>
-            <span className="text-xs sm:text-sm font-semibold text-slate-800 group-hover:text-slate-900 transition">
-              Settings
-            </span>
-          </button>
+          {canViewSettings && (
+            <button
+              type="button"
+              id="menu-btn-settings"
+              onClick={() => onNavigate('settings')}
+              className="p-3 sm:p-4 rounded-2xl bg-white border border-slate-200/90 shadow-xs hover:border-slate-400 hover:shadow-md transition text-center flex flex-col items-center justify-center gap-2 group active:scale-95 cursor-pointer"
+            >
+              <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-xl bg-slate-100 text-slate-700 group-hover:bg-slate-800 group-hover:text-white transition flex items-center justify-center">
+                <Settings className="w-5 h-5 sm:w-6 sm:h-6" />
+              </div>
+              <span className="text-xs sm:text-sm font-semibold text-slate-800 group-hover:text-slate-900 transition">
+                Settings
+              </span>
+            </button>
+          )}
 
           {/* 7. Customers */}
-          <button
-            type="button"
-            id="menu-btn-customers"
-            onClick={() => onNavigate('customers')}
-            className="p-3 sm:p-4 rounded-2xl bg-white border border-slate-200/90 shadow-xs hover:border-purple-400 hover:shadow-md transition text-center flex flex-col items-center justify-center gap-2 group active:scale-95 cursor-pointer"
-          >
-            <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-xl bg-purple-50 text-purple-600 group-hover:bg-purple-600 group-hover:text-white transition flex items-center justify-center">
-              <Users className="w-5 h-5 sm:w-6 sm:h-6" />
-            </div>
-            <span className="text-xs sm:text-sm font-semibold text-slate-800 group-hover:text-purple-700 transition">
-              Customers
-            </span>
-          </button>
+          {(canViewCustomers || canViewCredit) && (
+            <button
+              type="button"
+              id="menu-btn-customers"
+              onClick={() => onNavigate('customers')}
+              className="p-3 sm:p-4 rounded-2xl bg-white border border-slate-200/90 shadow-xs hover:border-purple-400 hover:shadow-md transition text-center flex flex-col items-center justify-center gap-2 group active:scale-95 cursor-pointer"
+            >
+              <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-xl bg-purple-50 text-purple-600 group-hover:bg-purple-600 group-hover:text-white transition flex items-center justify-center">
+                <Users className="w-5 h-5 sm:w-6 sm:h-6" />
+              </div>
+              <span className="text-xs sm:text-sm font-semibold text-slate-800 group-hover:text-purple-700 transition">
+                Customers
+              </span>
+            </button>
+          )}
 
           {/* 8. Suppliers */}
-          <button
-            type="button"
-            id="menu-btn-suppliers"
-            onClick={() => onNavigate('suppliers')}
-            className="p-3 sm:p-4 rounded-2xl bg-white border border-slate-200/90 shadow-xs hover:border-orange-400 hover:shadow-md transition text-center flex flex-col items-center justify-center gap-2 group active:scale-95 cursor-pointer"
-          >
-            <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-xl bg-orange-50 text-orange-600 group-hover:bg-orange-600 group-hover:text-white transition flex items-center justify-center">
-              <Truck className="w-5 h-5 sm:w-6 sm:h-6" />
-            </div>
-            <span className="text-xs sm:text-sm font-semibold text-slate-800 group-hover:text-orange-700 transition">
-              Suppliers
-            </span>
-          </button>
+          {(isStoreOwner || hasPermission('products.create') || hasPermission('products.edit')) && (
+            <button
+              type="button"
+              id="menu-btn-suppliers"
+              onClick={() => onNavigate('suppliers')}
+              className="p-3 sm:p-4 rounded-2xl bg-white border border-slate-200/90 shadow-xs hover:border-orange-400 hover:shadow-md transition text-center flex flex-col items-center justify-center gap-2 group active:scale-95 cursor-pointer"
+            >
+              <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-xl bg-orange-50 text-orange-600 group-hover:bg-orange-600 group-hover:text-white transition flex items-center justify-center">
+                <Truck className="w-5 h-5 sm:w-6 sm:h-6" />
+              </div>
+              <span className="text-xs sm:text-sm font-semibold text-slate-800 group-hover:text-orange-700 transition">
+                Suppliers
+              </span>
+            </button>
+          )}
 
           {/* 9. Staff */}
-          <button
-            type="button"
-            id="menu-btn-staff"
-            onClick={() => onNavigate('staff')}
-            className="p-3 sm:p-4 rounded-2xl bg-white border border-slate-200/90 shadow-xs hover:border-rose-400 hover:shadow-md transition text-center flex flex-col items-center justify-center gap-2 group active:scale-95 cursor-pointer"
-          >
-            <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-xl bg-rose-50 text-rose-600 group-hover:bg-rose-600 group-hover:text-white transition flex items-center justify-center">
-              <ShieldCheck className="w-5 h-5 sm:w-6 sm:h-6" />
-            </div>
-            <span className="text-xs sm:text-sm font-semibold text-slate-800 group-hover:text-rose-700 transition">
-              Staff
-            </span>
-          </button>
+          {canViewStaff && (
+            <button
+              type="button"
+              id="menu-btn-staff"
+              onClick={() => onNavigate('staff')}
+              className="p-3 sm:p-4 rounded-2xl bg-white border border-slate-200/90 shadow-xs hover:border-rose-400 hover:shadow-md transition text-center flex flex-col items-center justify-center gap-2 group active:scale-95 cursor-pointer"
+            >
+              <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-xl bg-rose-50 text-rose-600 group-hover:bg-rose-600 group-hover:text-white transition flex items-center justify-center">
+                <ShieldCheck className="w-5 h-5 sm:w-6 sm:h-6" />
+              </div>
+              <span className="text-xs sm:text-sm font-semibold text-slate-800 group-hover:text-rose-700 transition">
+                Staff
+              </span>
+            </button>
+          )}
         </div>
 
         {/* Finish this section with wide buttons for "Subscription" */}
@@ -493,6 +648,241 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onView
           </button>
         </div>
       </div>
+
+      {/* ======================================================== */}
+      {/* CUSTOMER CREDIT & DEBT OVERVIEW (REQUIREMENT 7)          */}
+      {/* ======================================================== */}
+      {canViewCredit && (
+      <div className="pt-2 space-y-4">
+        {/* Header */}
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pt-4 border-t border-slate-200">
+          <div>
+            <div className="flex items-center gap-2">
+              <h3 className="text-base font-bold text-slate-900">Customer Credit &amp; Debt Overview</h3>
+              <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-amber-100 text-amber-900 border border-amber-200">
+                Accounts Receivable
+              </span>
+            </div>
+            <p className="text-xs text-slate-500">Live credit sales balance, customer debt recovery, and payment audit</p>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => onNavigate('customers')}
+            className="text-xs font-semibold text-blue-600 hover:text-blue-700 flex items-center gap-1 self-start sm:self-auto cursor-pointer"
+          >
+            <span>Customer Directory &amp; Ledger</span>
+            <ArrowRight className="w-3.5 h-3.5" />
+          </button>
+        </div>
+
+        {/* 4 Summary Stat Cards */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+          {/* 1. Total Outstanding Credit */}
+          <div 
+            onClick={() => onNavigate('customers')}
+            className="p-4 rounded-2xl bg-amber-50/60 border border-amber-200 shadow-xs hover:border-amber-400 transition cursor-pointer"
+          >
+            <div className="flex items-center justify-between text-amber-900 text-xs font-semibold">
+              <span>Total Outstanding Debt</span>
+              <div className="w-7 h-7 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center">
+                <Clock className="w-4 h-4" />
+              </div>
+            </div>
+            <div className="text-xl sm:text-2xl font-black text-amber-950 mt-2 font-mono">
+              {formatCurrency(creditOverview.totalOutstandingCredit, currency)}
+            </div>
+            <div className="text-[11px] text-amber-800 font-medium mt-0.5">
+              Across all customer accounts
+            </div>
+          </div>
+
+          {/* 2. Number of Customers with Outstanding Balances */}
+          <div 
+            onClick={() => onNavigate('customers')}
+            className="p-4 rounded-2xl bg-white border border-slate-200 shadow-xs hover:border-blue-400 transition cursor-pointer"
+          >
+            <div className="flex items-center justify-between text-slate-600 text-xs font-semibold">
+              <span>Customers with Debt</span>
+              <div className="w-7 h-7 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center">
+                <Users className="w-4 h-4" />
+              </div>
+            </div>
+            <div className="text-xl sm:text-2xl font-black text-slate-900 mt-2">
+              {creditOverview.debtorsCount}
+            </div>
+            <div className="text-[11px] text-slate-500 font-medium mt-0.5">
+              {creditOverview.debtorsCount === 0 ? 'All accounts settled' : `${creditOverview.debtorsCount} active debtor profiles`}
+            </div>
+          </div>
+
+          {/* 3. Total Credit Issued */}
+          <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-xs">
+            <div className="flex items-center justify-between text-slate-600 text-xs font-semibold">
+              <span>Total Credit Issued</span>
+              <div className="w-7 h-7 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center">
+                <ArrowUpRight className="w-4 h-4" />
+              </div>
+            </div>
+            <div className="text-xl sm:text-2xl font-black text-slate-900 mt-2 font-mono">
+              {formatCurrency(creditOverview.totalCreditIssued, currency)}
+            </div>
+            <div className="text-[11px] text-slate-500 font-medium mt-0.5">
+              Lifetime credit sales value
+            </div>
+          </div>
+
+          {/* 4. Total Repayments Received */}
+          <div className="p-4 rounded-2xl bg-emerald-50/50 border border-emerald-200 shadow-xs">
+            <div className="flex items-center justify-between text-emerald-800 text-xs font-semibold">
+              <span>Total Repayments</span>
+              <div className="w-7 h-7 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center">
+                <CheckCircle2 className="w-4 h-4" />
+              </div>
+            </div>
+            <div className="text-xl sm:text-2xl font-black text-emerald-900 mt-2 font-mono">
+              {formatCurrency(creditOverview.totalRepaymentsReceived, currency)}
+            </div>
+            <div className="text-[11px] text-emerald-700 font-medium mt-0.5">
+              Recovered customer payments
+            </div>
+          </div>
+        </div>
+
+        {/* Two-Column Split: Customers with Outstanding Balances & Recent Credit Activity */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-5">
+          {/* Left: Customers with Outstanding Balances */}
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-4 sm:p-5 flex flex-col justify-between">
+            <div>
+              <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                <div className="flex items-center gap-2">
+                  <Clock className="w-4 h-4 text-amber-600" />
+                  <h4 className="text-sm font-bold text-slate-900">Customers with Outstanding Balances</h4>
+                </div>
+                <span className="text-xs font-semibold text-slate-400">
+                  {creditOverview.debtorsCount} {creditOverview.debtorsCount === 1 ? 'Customer' : 'Customers'}
+                </span>
+              </div>
+
+              <div className="mt-3 divide-y divide-slate-100">
+                {creditOverview.debtors.length === 0 ? (
+                  <div className="py-8 text-center text-slate-400">
+                    <CheckCircle2 className="w-8 h-8 mx-auto mb-2 text-emerald-500" />
+                    <p className="text-xs font-bold text-slate-700">All customer accounts are clear!</p>
+                    <p className="text-[11px] text-slate-400 mt-0.5">No outstanding credit balances at this time.</p>
+                  </div>
+                ) : (
+                  creditOverview.debtors.slice(0, 5).map((d) => (
+                    <div
+                      key={d.customerId}
+                      onClick={() => onNavigate('customers', d.customerId)}
+                      className="py-2.5 flex items-center justify-between hover:bg-slate-50/80 rounded-xl px-2 transition cursor-pointer group"
+                    >
+                      <div className="min-w-0 pr-2">
+                        <div className="font-bold text-slate-900 group-hover:text-blue-600 text-xs sm:text-sm truncate">
+                          {d.customerName}
+                        </div>
+                        <div className="text-[11px] text-slate-400 truncate">
+                          {d.phone || 'No phone'} &bull; Credit: {formatCurrency(d.creditTaken, currency)}
+                        </div>
+                      </div>
+
+                      <div className="text-right shrink-0">
+                        <div className="font-bold text-amber-800 font-mono text-xs sm:text-sm">
+                          {formatCurrency(d.outstandingBalance, currency)}
+                        </div>
+                        <div className="text-[10px] text-slate-400">
+                          Repaid: {formatCurrency(d.repaid, currency)}
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+
+            <div className="pt-3 border-t border-slate-100 mt-2">
+              <button
+                type="button"
+                onClick={() => onNavigate('customers')}
+                className="w-full py-2 px-3 text-xs font-semibold text-center text-slate-700 hover:text-slate-900 bg-slate-50 hover:bg-slate-100 rounded-xl transition flex items-center justify-center gap-1 cursor-pointer"
+              >
+                <span>View Full Debtor Ledger</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+
+          {/* Right: Recent Credit Transactions */}
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-4 sm:p-5 flex flex-col justify-between">
+            <div>
+              <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                <div className="flex items-center gap-2">
+                  <Receipt className="w-4 h-4 text-blue-600" />
+                  <h4 className="text-sm font-bold text-slate-900">Recent Credit Transactions</h4>
+                </div>
+                <span className="text-xs font-semibold text-slate-400">Sales &amp; Repayments</span>
+              </div>
+
+              <div className="mt-3 divide-y divide-slate-100">
+                {creditOverview.recentCreditTransactions.length === 0 ? (
+                  <div className="py-8 text-center text-slate-400">
+                    <Receipt className="w-8 h-8 mx-auto mb-2 text-slate-300" />
+                    <p className="text-xs font-bold text-slate-700">No credit activity recorded yet</p>
+                    <p className="text-[11px] text-slate-400 mt-0.5">Credit sales from POS and repayments will audit here.</p>
+                  </div>
+                ) : (
+                  creditOverview.recentCreditTransactions.map((tx) => (
+                    <div
+                      key={tx.id}
+                      onClick={() => onNavigate('customers', tx.customerId || undefined)}
+                      className="py-2.5 flex items-center justify-between hover:bg-slate-50/80 rounded-xl px-2 transition cursor-pointer group text-xs"
+                    >
+                      <div className="min-w-0 pr-2">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className={`px-2 py-0.2 rounded-full text-[10px] font-bold ${
+                            tx.type === 'credit_sale' 
+                              ? 'bg-amber-100 text-amber-900' 
+                              : 'bg-emerald-100 text-emerald-900'
+                          }`}>
+                            {tx.type === 'credit_sale' ? 'Credit Sale' : 'Repayment'}
+                          </span>
+                          <span className="font-semibold text-slate-900 group-hover:text-blue-600 truncate">
+                            {tx.customerName}
+                          </span>
+                        </div>
+                        <div className="text-[11px] text-slate-400 mt-0.5">
+                          {formatDate(tx.date)} &bull; {tx.reference}
+                        </div>
+                      </div>
+
+                      <div className="text-right shrink-0">
+                        <div className={`font-bold font-mono text-xs sm:text-sm ${
+                          tx.type === 'credit_sale' ? 'text-amber-900' : 'text-emerald-700'
+                        }`}>
+                          {tx.type === 'credit_sale' ? '+' : '-'} {formatCurrency(tx.amount, currency)}
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+
+            <div className="pt-3 border-t border-slate-100 mt-2">
+              <button
+                type="button"
+                onClick={() => onNavigate('pos')}
+                className="w-full py-2 px-3 text-xs font-semibold text-center text-blue-700 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 rounded-xl transition flex items-center justify-center gap-1 cursor-pointer"
+              >
+                <span>New Credit Sale at POS</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+      )}
 
       {/* ======================================================== */}
       {/* 5. SECONDARY ANALYTICS & RECENT SALES TABLE              */}
@@ -579,43 +969,53 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onView
               </div>
 
               <div className="space-y-3">
-                <div className="p-3 rounded-xl bg-slate-50 border border-slate-100">
-                  <div className="text-xs text-slate-500">Stock Valuation (at cost)</div>
-                  <div className="text-lg font-bold text-slate-900 mt-0.5">
-                    {formatCurrency(totalInventoryValue, currency)}
+                {(isStoreOwner || canViewProducts) && (
+                  <div className="p-3 rounded-xl bg-slate-50 border border-slate-100">
+                    <div className="text-xs text-slate-500">Stock Valuation (at cost)</div>
+                    <div className="text-lg font-bold text-slate-900 mt-0.5">
+                      {formatCurrency(totalInventoryValue, currency)}
+                    </div>
                   </div>
-                </div>
+                )}
 
-                <div className="p-3 rounded-xl bg-indigo-50/50 border border-indigo-100/60">
-                  <div className="text-xs text-indigo-700">Estimated Net Profit ({dateRange})</div>
-                  <div className={`text-lg font-bold mt-0.5 ${estimatedProfit >= 0 ? 'text-indigo-900' : 'text-red-600'}`}>
-                    {formatCurrency(estimatedProfit, currency)}
+                {canViewProfit && (
+                  <div className="p-3 rounded-xl bg-indigo-50/50 border border-indigo-100/60">
+                    <div className="text-xs text-indigo-700">Estimated Net Profit ({dateRange})</div>
+                    <div className={`text-lg font-bold mt-0.5 ${estimatedProfit >= 0 ? 'text-indigo-900' : 'text-red-600'}`}>
+                      {formatCurrency(estimatedProfit, currency)}
+                    </div>
                   </div>
-                </div>
+                )}
 
                 <div className="space-y-1.5 text-xs">
-                  <div className="flex justify-between items-center text-slate-600">
-                    <span>Recorded Expenses:</span>
-                    <span className="font-semibold text-slate-800">{formatCurrency(totalExpensesAmount, currency)}</span>
-                  </div>
-                  <div className="flex justify-between items-center text-slate-600">
-                    <span>Cost of Goods (COGS):</span>
-                    <span className="font-semibold text-slate-800">{formatCurrency(totalCogs, currency)}</span>
-                  </div>
+                  {canViewExpenses && (
+                    <div className="flex justify-between items-center text-slate-600">
+                      <span>Recorded Expenses:</span>
+                      <span className="font-semibold text-slate-800">{formatCurrency(totalExpensesAmount, currency)}</span>
+                    </div>
+                  )}
+                  {canViewProfit && (
+                    <div className="flex justify-between items-center text-slate-600">
+                      <span>Cost of Goods (COGS):</span>
+                      <span className="font-semibold text-slate-800">{formatCurrency(totalCogs, currency)}</span>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
 
-            <div className="mt-4 pt-3 border-t border-slate-100">
-              <button
-                type="button"
-                onClick={() => onNavigate('reports')}
-                className="w-full py-2 px-3 text-xs font-semibold rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 transition flex items-center justify-center gap-1.5"
-              >
-                <span>View Full Financial Reports</span>
-                <ArrowRight className="w-3.5 h-3.5" />
-              </button>
-            </div>
+            {canViewReports && (
+              <div className="mt-4 pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => onNavigate('reports')}
+                  className="w-full py-2 px-3 text-xs font-semibold rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 transition flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  <span>View Full Financial Reports</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            )}
           </div>
         </div>
 

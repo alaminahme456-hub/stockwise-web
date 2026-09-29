@@ -23,11 +23,29 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
   onSelectTab,
   onOpenMoreMenu,
 }) => {
-  const { products } = useStore();
+  const { products, hasPermission, isStoreOwner } = useStore();
 
   const lowStockCount = products.filter(
     (p) => Number(p.current_stock) <= Number(p.min_stock_level) && p.status === 'active'
   ).length;
+
+  const isTabAllowed = (tabId: NavigationTab): boolean => {
+    if (isStoreOwner) return true;
+    switch (tabId) {
+      case 'dashboard':
+        return hasPermission('dashboard.view');
+      case 'pos':
+        return hasPermission('sales.create') || hasPermission('sales.view');
+      case 'products':
+        return hasPermission('products.view');
+      case 'inventory':
+        return hasPermission('products.view') || hasPermission('products.adjust_stock');
+      case 'transactions':
+        return hasPermission('sales.view');
+      default:
+        return false;
+    }
+  };
 
   const primaryMobileTabs: Array<{
     id: NavigationTab;
@@ -40,7 +58,7 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
     { id: 'products', label: 'Products', icon: Package },
     { id: 'inventory', label: 'Stock', icon: Boxes, badge: lowStockCount > 0 ? lowStockCount : undefined },
     { id: 'transactions', label: 'Sales', icon: Receipt },
-  ];
+  ].filter((t) => isTabAllowed(t.id));
 
   return (
     <nav 

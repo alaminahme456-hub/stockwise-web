@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
+import React, { createContext, useContext, useEffect, useState, useCallback, useMemo } from 'react';
 import { useAuth } from './AuthContext';
 import { 
   Store, 
@@ -10,8 +10,11 @@ import {
   Supplier, 
   Category, 
   StoreSettings, 
-  StoreMember,
-  Role
+  StoreMember, 
+  Role,
+  CustomerPayment,
+  StaffInvitation,
+  StaffActivity
 } from '../types';
 import { 
   fetchUserStores, 
@@ -24,6 +27,19 @@ import {
   fetchCategories, 
   fetchStoreSettings,
   fetchStoreMembers,
+  fetchStoreInvitations,
+  fetchStaffActivity,
+  createStaffInvitation as apiCreateStaffInvitation,
+  resendStaffInvitation as apiResendStaffInvitation,
+  cancelStaffInvitation as apiCancelStaffInvitation,
+  updateStoreMemberPermissions as apiUpdatePermissions,
+  suspendStoreMember as apiSuspendMember,
+  reactivateStoreMember as apiReactivateMember,
+  removeStoreMember as apiRemoveMember,
+  acceptStaffInvitation as apiAcceptInvitation,
+  fetchCustomerPayments,
+  createCustomerPayment,
+  deleteCustomerPayment as apiDeleteCustomerPayment,
   createStore as apiCreateStore,
   updateStore as apiUpdateStore,
   saveStoreSettings as apiSaveSettings
@@ -45,13 +61,37 @@ interface StoreContextType {
   categories: Category[];
   settings: StoreSettings | null;
   members: StoreMember[];
+  staffInvitations: StaffInvitation[];
+  staffActivity: StaffActivity[];
+  customerPayments: CustomerPayment[];
   currentMemberRole: Role;
+  currentMember: StoreMember | null;
+  isStoreOwner: boolean;
+  hasPermission: (permission: string) => boolean;
   setCurrentStore: (store: Store) => void;
   refreshStores: () => Promise<void>;
   refreshStoreData: () => Promise<void>;
   createNewStore: (name: string, currency?: string, details?: Partial<Store>) => Promise<Store>;
   updateCurrentStore: (updates: Partial<Store>) => Promise<void>;
   updateSettings: (newSettings: Partial<StoreSettings>) => Promise<void>;
+  recordCustomerPayment: (payment: Omit<CustomerPayment, 'id' | 'created_at'>) => Promise<CustomerPayment>;
+  deleteCustomerPayment: (paymentId: string) => Promise<void>;
+  // Staff Invitation & Permission Actions
+  inviteStaff: (params: {
+    name: string;
+    email: string;
+    phone?: string;
+    role: string;
+    permissions: string[];
+    notes?: string;
+  }) => Promise<{ member: StoreMember; invitation: StaffInvitation }>;
+  resendInvite: (invitationId: string) => Promise<StaffInvitation>;
+  cancelInvite: (invitationId: string) => Promise<void>;
+  updateStaffPermissions: (memberId: string, role: string, permissions: string[]) => Promise<StoreMember>;
+  suspendStaff: (memberId: string) => Promise<StoreMember>;
+  reactivateStaff: (memberId: string) => Promise<StoreMember>;
+  removeStaff: (memberId: string) => Promise<void>;
+  acceptInvite: (token: string, userName?: string) => Promise<{ store: Store; member: StoreMember }>;
   isRealtimeConnected: boolean;
 }
 
@@ -75,14 +115,56 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [categories, setCategories] = useState<Category[]>([]);
   const [settings, setSettings] = useState<StoreSettings | null>(null);
   const [members, setMembers] = useState<StoreMember[]>([]);
+  const [staffInvitations, setStaffInvitations] = useState<StaffInvitation[]>([]);
+  const [staffActivity, setStaffActivity] = useState<StaffActivity[]>([]);
+  const [customerPayments, setCustomerPayments] = useState<CustomerPayment[]>([]);
+
+  // Check if current user is owner of the active store
+  const isStoreOwner = Boolean(currentStore && user && currentStore.owner_id === user.id);
+
+  // Current user's membership in the active store (if not the direct owner)
+  const currentMember: StoreMember | null = useMemo(() => {
+    if (!currentStore || !user) return null;
+    if (isStoreOwner) return null;
+    return (
+      members.find(
+        (m) =>
+          m.user_id === user.id ||
+          (user.email && m.user_email?.toLowerCase() === user.email.toLowerCase())
+      ) || null
+    );
+  }, [currentStore, user, isStoreOwner, members]);
 
   // Current user's role in the active store
-  const currentMemberRole: Role = (() => {
+  const currentMemberRole: Role = useMemo(() => {
     if (!currentStore || !user) return 'owner';
-    if (currentStore.owner_id === user.id) return 'owner';
-    const found = members.find((m) => m.user_id === user.id);
-    return found?.role || 'owner';
-  })();
+    if (isStoreOwner) return 'owner';
+    return (currentMember?.role as Role) || 'cashier';
+  }, [currentStore, user, isStoreOwner, currentMember]);
+
+  // Granular Permission Checker (backend-enforced in code)
+  const hasPermission = useCallback(
+    (permission: string): boolean => {
+      if (!currentStore || !user) return false;
+      // Store Owner has unrestricted access to all store operations
+      if (isStoreOwner) return true;
+      if (!currentMember) return false;
+      // Suspended or removed staff members are blocked from all features
+      if (currentMember.status === 'suspended' || currentMember.status === 'removed') {
+        return false;
+      }
+      // Check assigned granular permissions array
+      if (Array.isArray(currentMember.permissions) && currentMember.permissions.includes(permission)) {
+        return true;
+      }
+      // Admin role default access for standard business operations
+      if (currentMember.role === 'admin' && !permission.startsWith('settings.edit')) {
+        return true;
+      }
+      return false;
+    },
+    [currentStore, user, isStoreOwner, currentMember]
+  );
 
   // 1. Fetch user's stores
   const refreshStores = useCallback(async () => {
@@ -140,6 +222,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       setCategories([]);
       setSettings(null);
       setMembers([]);
+      setStaffInvitations([]);
+      setStaffActivity([]);
+      setCustomerPayments([]);
       return;
     }
 
@@ -155,6 +240,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         catList,
         storeSettings,
         storeMembers,
+        invitationsList,
+        activityList,
+        paymentsList,
       ] = await Promise.all([
         fetchProducts(currentStore.id),
         fetchInventoryMovements(currentStore.id),
@@ -165,6 +253,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         fetchCategories(currentStore.id),
         fetchStoreSettings(currentStore.id),
         fetchStoreMembers(currentStore.id),
+        fetchStoreInvitations(currentStore.id),
+        fetchStaffActivity(currentStore.id),
+        fetchCustomerPayments(currentStore.id),
       ]);
 
       setProducts(prods);
@@ -176,6 +267,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       setCategories(catList);
       setSettings(storeSettings);
       setMembers(storeMembers);
+      setStaffInvitations(invitationsList);
+      setStaffActivity(activityList);
+      setCustomerPayments(paymentsList);
     } catch (err) {
       console.error('Error fetching store data:', err);
     } finally {
@@ -247,6 +341,20 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           fetchCategories(currentStore.id).then(setCategories).catch(console.error);
         }
       )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'customer_payments', filter: `store_id=eq.${currentStore.id}` },
+        () => {
+          fetchCustomerPayments(currentStore.id).then(setCustomerPayments).catch(console.error);
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'store_members', filter: `store_id=eq.${currentStore.id}` },
+        () => {
+          fetchStoreMembers(currentStore.id).then(setMembers).catch(console.error);
+        }
+      )
       .subscribe((status) => {
         setIsRealtimeConnected(status === 'SUBSCRIBED');
       });
@@ -278,6 +386,113 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setSettings(updated);
   };
 
+  const recordCustomerPayment = async (
+    payment: Omit<CustomerPayment, 'id' | 'created_at'>
+  ): Promise<CustomerPayment> => {
+    if (!currentStore) throw new Error('No store selected');
+    const created = await createCustomerPayment(currentStore.id, payment);
+    setCustomerPayments((prev) => [created, ...prev]);
+    return created;
+  };
+
+  const deleteCustomerPayment = async (paymentId: string): Promise<void> => {
+    if (!currentStore) throw new Error('No store selected');
+    await apiDeleteCustomerPayment(currentStore.id, paymentId);
+    setCustomerPayments((prev) => prev.filter((p) => p.id !== paymentId));
+  };
+
+  // Staff Management Implementations
+  const inviteStaff = async (params: {
+    name: string;
+    email: string;
+    phone?: string;
+    role: string;
+    permissions: string[];
+    notes?: string;
+  }) => {
+    if (!currentStore) throw new Error('No store selected');
+    if (!user) throw new Error('Not authenticated');
+
+    const result = await apiCreateStaffInvitation({
+      storeId: currentStore.id,
+      storeName: currentStore.name,
+      invitedBy: user.id,
+      invitedByName: user.user_metadata?.full_name || user.email || 'Store Owner',
+      name: params.name,
+      email: params.email,
+      phone: params.phone,
+      role: params.role,
+      permissions: params.permissions,
+      notes: params.notes,
+    });
+
+    setMembers((prev) => [result.member, ...prev]);
+    setStaffInvitations((prev) => [result.invitation, ...prev]);
+    fetchStaffActivity(currentStore.id).then(setStaffActivity).catch(console.warn);
+    return result;
+  };
+
+  const resendInvite = async (invitationId: string) => {
+    if (!currentStore) throw new Error('No store selected');
+    const performer = user?.user_metadata?.full_name || user?.email || 'Store Owner';
+    const updated = await apiResendStaffInvitation(currentStore.id, invitationId, performer);
+    setStaffInvitations((prev) => prev.map((i) => (i.id === invitationId ? updated : i)));
+    fetchStaffActivity(currentStore.id).then(setStaffActivity).catch(console.warn);
+    return updated;
+  };
+
+  const cancelInvite = async (invitationId: string) => {
+    if (!currentStore) throw new Error('No store selected');
+    const performer = user?.user_metadata?.full_name || user?.email || 'Store Owner';
+    await apiCancelStaffInvitation(currentStore.id, invitationId, performer);
+    setStaffInvitations((prev) => prev.filter((i) => i.id !== invitationId));
+    setMembers((prev) => prev.filter((m) => !m.invitation_token || !invitationId.includes(m.invitation_token)));
+    fetchStaffActivity(currentStore.id).then(setStaffActivity).catch(console.warn);
+  };
+
+  const updateStaffPermissions = async (memberId: string, role: string, permissions: string[]) => {
+    if (!currentStore) throw new Error('No store selected');
+    const performer = user?.user_metadata?.full_name || user?.email || 'Store Owner';
+    const updated = await apiUpdatePermissions(currentStore.id, memberId, role, permissions, performer);
+    setMembers((prev) => prev.map((m) => (m.id === memberId ? updated : m)));
+    fetchStaffActivity(currentStore.id).then(setStaffActivity).catch(console.warn);
+    return updated;
+  };
+
+  const suspendStaff = async (memberId: string) => {
+    if (!currentStore) throw new Error('No store selected');
+    const performer = user?.user_metadata?.full_name || user?.email || 'Store Owner';
+    const updated = await apiSuspendMember(currentStore.id, memberId, performer);
+    setMembers((prev) => prev.map((m) => (m.id === memberId ? updated : m)));
+    fetchStaffActivity(currentStore.id).then(setStaffActivity).catch(console.warn);
+    return updated;
+  };
+
+  const reactivateStaff = async (memberId: string) => {
+    if (!currentStore) throw new Error('No store selected');
+    const performer = user?.user_metadata?.full_name || user?.email || 'Store Owner';
+    const updated = await apiReactivateMember(currentStore.id, memberId, performer);
+    setMembers((prev) => prev.map((m) => (m.id === memberId ? updated : m)));
+    fetchStaffActivity(currentStore.id).then(setStaffActivity).catch(console.warn);
+    return updated;
+  };
+
+  const removeStaff = async (memberId: string) => {
+    if (!currentStore) throw new Error('No store selected');
+    const performer = user?.user_metadata?.full_name || user?.email || 'Store Owner';
+    await apiRemoveMember(memberId, currentStore.id, performer);
+    setMembers((prev) => prev.filter((m) => m.id !== memberId));
+    fetchStaffActivity(currentStore.id).then(setStaffActivity).catch(console.warn);
+  };
+
+  const acceptInvite = async (token: string, userName?: string) => {
+    if (!user) throw new Error('Authentication required to accept invitation.');
+    const result = await apiAcceptInvitation(token, user.id, user.email || '', userName);
+    await refreshStores();
+    setCurrentStore(result.store);
+    return result;
+  };
+
   return (
     <StoreContext.Provider
       value={{
@@ -295,13 +510,29 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         categories,
         settings,
         members,
+        staffInvitations,
+        staffActivity,
+        customerPayments,
         currentMemberRole,
+        currentMember,
+        isStoreOwner,
+        hasPermission,
         setCurrentStore,
         refreshStores,
         refreshStoreData,
         createNewStore,
         updateCurrentStore,
         updateSettings,
+        recordCustomerPayment,
+        deleteCustomerPayment,
+        inviteStaff,
+        resendInvite,
+        cancelInvite,
+        updateStaffPermissions,
+        suspendStaff,
+        reactivateStaff,
+        removeStaff,
+        acceptInvite,
         isRealtimeConnected,
       }}
     >

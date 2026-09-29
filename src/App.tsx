@@ -202,7 +202,6 @@ const MainAppLayout: React.FC = () => {
         {/* Top Navbar */}
         <Navbar 
           onNavigate={(tab) => setCurrentTab(tab)} 
-          onOpenMobileMenu={() => setMobileMenuOpen(true)}
         />
 
         {/* View Routing */}

@@ -6,17 +6,15 @@ import {
   LogOut, 
   ChevronDown, 
   ShieldCheck, 
-  Settings,
-  Menu
+  Settings
 } from 'lucide-react';
 import { NavigationTab } from '../types';
 
 interface NavbarProps {
   onNavigate?: (tab: NavigationTab) => void;
-  onOpenMobileMenu?: () => void;
 }
 
-export const Navbar: React.FC<NavbarProps> = ({ onNavigate, onOpenMobileMenu }) => {
+export const Navbar: React.FC<NavbarProps> = ({ onNavigate }) => {
   const { user, profile, signOut } = useAuth();
   const { currentStore, isRealtimeConnected, currentMemberRole } = useStore();
   
@@ -33,22 +31,16 @@ export const Navbar: React.FC<NavbarProps> = ({ onNavigate, onOpenMobileMenu }) 
   return (
     <header className="h-14 sm:h-16 bg-white border-b border-slate-200 sticky top-0 z-30 px-3 sm:px-4 lg:px-8 flex items-center justify-between shadow-xs">
       {/* Position the StockWise branding at the top */}
-      <div className="flex items-center gap-2 sm:gap-3 shrink-0">
-        {onOpenMobileMenu && (
-          <button
-            type="button"
-            onClick={onOpenMobileMenu}
-            className="lg:hidden p-1.5 -ml-1 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-xl transition cursor-pointer"
-            aria-label="Open navigation menu"
-          >
-            <Menu className="w-5 h-5" />
-          </button>
-        )}
-        <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-blue-600 text-white flex items-center justify-center font-black text-sm sm:text-base shadow-sm shadow-blue-500/20 shrink-0">
+      <div 
+        onClick={() => onNavigate && onNavigate('dashboard')}
+        className={`flex items-center gap-2 sm:gap-3 shrink-0 ${onNavigate ? 'cursor-pointer select-none group' : ''}`}
+        title="StockWise Dashboard"
+      >
+        <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-blue-600 text-white flex items-center justify-center font-black text-sm sm:text-base shadow-sm shadow-blue-500/20 shrink-0 group-hover:bg-blue-500 transition-colors">
           SW
         </div>
         <div className="min-w-0">
-          <div className="text-base sm:text-lg font-black text-slate-900 tracking-tight leading-none flex items-center gap-1.5">
+          <div className="text-base sm:text-lg font-black text-slate-900 tracking-tight leading-none flex items-center gap-1.5 group-hover:text-blue-600 transition-colors">
             <span>StockWise</span>
           </div>
           <div className="text-[10px] sm:text-[11px] text-slate-500 font-medium mt-0.5 hidden sm:block">

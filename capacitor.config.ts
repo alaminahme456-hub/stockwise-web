@@ -4,7 +4,6 @@ const config: CapacitorConfig = {
   appId: 'com.altech.stockwise',
   appName: 'ALTECH StockWise',
   webDir: 'dist',
-  bundledWebRuntime: false,
   android: {
     backgroundColor: '#0B1220'
   },

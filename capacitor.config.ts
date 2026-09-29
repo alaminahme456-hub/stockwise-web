@@ -6,7 +6,24 @@ const config: CapacitorConfig = {
   webDir: 'dist',
   bundledWebRuntime: false,
   android: {
-    backgroundColor: '#0B0B0B'
+    backgroundColor: '#0B1220'
+  },
+  plugins: {
+    SplashScreen: {
+      launchShowDuration: 1400,
+      launchAutoHide: true,
+      launchFadeOutDuration: 250,
+      backgroundColor: '#0B1220',
+      androidScaleType: 'CENTER',
+      showSpinner: false,
+      splashFullScreen: true,
+      splashImmersive: true
+    },
+    StatusBar: {
+      overlaysWebView: true,
+      style: 'DARK',
+      backgroundColor: '#0B1220'
+    }
   }
 };
 

@@ -13,8 +13,8 @@ import {
 } from 'lucide-react';
 
 export const AuthModal: React.FC = () => {
-  const { signIn, signUp, resetPassword } = useAuth();
-  const [mode, setMode] = useState<'login' | 'register' | 'forgot' | 'setup'>('login');
+  const { signIn, signUp } = useAuth();
+  const [mode, setMode] = useState<'login' | 'register' | 'setup'>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState('');
@@ -57,13 +57,6 @@ export const AuthModal: React.FC = () => {
         } else {
           setSuccessMsg('Account registered in Supabase! If confirmation is required, please check your inbox to confirm before signing in.');
           setMode('login');
-        }
-      } else if (mode === 'forgot') {
-        const { error } = await resetPassword(email);
-        if (error) {
-          setErrorMsg(error.message || 'Failed to send password reset email.');
-        } else {
-          setSuccessMsg('Password reset link has been dispatched to your email.');
         }
       }
     } catch (err: any) {
@@ -241,37 +234,24 @@ export const AuthModal: React.FC = () => {
                 </div>
               </div>
 
-              {mode !== 'forgot' && (
-                <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <label className="block text-xs font-medium text-slate-300">
-                      Password
-                    </label>
-                    {mode === 'login' && (
-                      <button
-                        type="button"
-                        onClick={() => { setMode('forgot'); setErrorMsg(null); }}
-                        className="text-xs text-blue-400 hover:text-blue-300"
-                      >
-                        Forgot password?
-                      </button>
-                    )}
+              <div>
+                <label className="block text-xs font-medium text-slate-300 mb-1">
+                  Password
+                </label>
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+                    <Lock className="w-4 h-4" />
                   </div>
-                  <div className="relative">
-                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
-                      <Lock className="w-4 h-4" />
-                    </div>
-                    <input
-                      type="password"
-                      required
-                      placeholder="••••••••"
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      className="w-full pl-10 pr-3 py-2.5 bg-slate-900 border border-slate-700 rounded-lg text-white text-sm placeholder-slate-500 focus:outline-none focus:border-blue-500 transition"
-                    />
-                  </div>
+                  <input
+                    type="password"
+                    required
+                    placeholder="••••••••"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className="w-full pl-10 pr-3 py-2.5 bg-slate-900 border border-slate-700 rounded-lg text-white text-sm placeholder-slate-500 focus:outline-none focus:border-blue-500 transition"
+                  />
                 </div>
-              )}
+              </div>
 
               <button
                 type="submit"
@@ -286,22 +266,11 @@ export const AuthModal: React.FC = () => {
                     <span>
                       {mode === 'login' && 'Sign In'}
                       {mode === 'register' && 'Create Account'}
-                      {mode === 'forgot' && 'Send Reset Instructions'}
                     </span>
                     <ArrowRight className="w-4 h-4" />
                   </>
                 )}
               </button>
-
-              {mode === 'forgot' && (
-                <button
-                  type="button"
-                  onClick={() => setMode('login')}
-                  className="w-full text-center text-xs text-slate-400 hover:text-slate-200 mt-2"
-                >
-                  Back to Sign In
-                </button>
-              )}
             </form>
           )}
 

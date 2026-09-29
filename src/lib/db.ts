@@ -280,6 +280,8 @@ export async function createStore(
       store_id: fallbackStore.id,
       user_id: ownerId,
       role: 'owner',
+      status: 'active',
+      permissions: ['*'],
       user_name: 'Store Owner',
       created_at: new Date().toISOString(),
     });

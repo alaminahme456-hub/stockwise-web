@@ -147,7 +147,7 @@ export const AcceptInvitationView: React.FC<AcceptInvitationViewProps> = ({
         } else {
           const { error, data } = await signIn(invitation.email, password) as any;
           if (error) throw error;
-          activeUserId = data?.user?.id || user?.id || `user-${Date.now()}`;
+          activeUserId = data?.user?.id || `user-${Date.now()}`;
         }
       }
 

@@ -71,7 +71,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     }
   };
 
-  const navItems: Array<{
+  const allNavItems: Array<{
     id: NavigationTab;
     label: string;
     icon: React.ComponentType<{ className?: string }>;
@@ -96,7 +96,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
     { id: 'staff', label: 'Staff', icon: UserCheck },
     { id: 'stores', label: 'My Stores', icon: Building2 },
     { id: 'settings', label: 'Settings', icon: Settings },
-  ].filter((item) => isTabAllowed(item.id));
+  ];
+
+  const navItems = allNavItems.filter((item) => isTabAllowed(item.id));
 
   const sidebarContent = (
     <div className="flex flex-col h-full bg-slate-900 text-slate-300 w-64 border-r border-slate-800">

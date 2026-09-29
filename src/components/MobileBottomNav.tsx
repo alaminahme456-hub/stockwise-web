@@ -47,7 +47,7 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
     }
   };
 
-  const primaryMobileTabs: Array<{
+  const allMobileTabs: Array<{
     id: NavigationTab;
     label: string;
     icon: React.ComponentType<{ className?: string }>;
@@ -58,7 +58,9 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
     { id: 'products', label: 'Products', icon: Package },
     { id: 'inventory', label: 'Stock', icon: Boxes, badge: lowStockCount > 0 ? lowStockCount : undefined },
     { id: 'transactions', label: 'Sales', icon: Receipt },
-  ].filter((t) => isTabAllowed(t.id));
+  ];
+
+  const primaryMobileTabs = allMobileTabs.filter((t) => isTabAllowed(t.id));
 
   return (
     <nav 

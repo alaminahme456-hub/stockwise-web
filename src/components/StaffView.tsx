@@ -89,6 +89,9 @@ export const StaffView: React.FC<StaffViewProps> = ({ onOpenInvitationToken }) =
   const [invitationSuccess, setInvitationSuccess] = useState<{
     member: StoreMember;
     invitation: StaffInvitation;
+    accountCreated?: boolean;
+    emailSent?: boolean;
+    emailError?: string;
   } | null>(null);
   const [copiedLink, setCopiedLink] = useState(false);
 
@@ -203,6 +206,15 @@ export const StaffView: React.FC<StaffViewProps> = ({ onOpenInvitationToken }) =
 
       setIsAddModalOpen(false);
       setInvitationSuccess(result);
+
+      if (result.emailSent) {
+        showToast(`✓ Staff member created & email invitation dispatched via SendLib`, 'success');
+      } else {
+        showToast(
+          `Staff account created! (SendLib status: ${result.emailError || 'pending delivery'}). You can copy the invite link below.`,
+          'info'
+        );
+      }
     } catch (err: any) {
       setCreateError(err?.message || 'Failed to create staff member and send invitation.');
     } finally {
@@ -215,7 +227,16 @@ export const StaffView: React.FC<StaffViewProps> = ({ onOpenInvitationToken }) =
     try {
       const updated = await resendInvite(invitationId);
       setPreviewEmailInv(updated);
-      showToast('✓ Staff invitation resent', 'success');
+      if (updated.emailSent) {
+        showToast(`✓ Staff invitation email resent via SendLib to ${updated.email}`, 'success');
+      } else {
+        showToast(
+          updated.emailError
+            ? `Invitation link renewed. SendLib email notice: ${updated.emailError}`
+            : '✓ Staff invitation link renewed',
+          'info'
+        );
+      }
     } catch (err: any) {
       showToast(err?.message ? `Could not resend invitation: ${err.message}` : 'Could not resend invitation. Please try again.', 'error');
     }
@@ -1067,13 +1088,32 @@ export const StaffView: React.FC<StaffViewProps> = ({ onOpenInvitationToken }) =
       {invitationSuccess && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/70 backdrop-blur-xs">
           <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 max-w-md w-full p-6 text-center animate-in zoom-in-95 duration-100">
-            <div className="w-14 h-14 rounded-2xl bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto mb-3">
+            <div className={`w-14 h-14 rounded-2xl flex items-center justify-center mx-auto mb-3 ${
+              invitationSuccess.emailSent ? 'bg-emerald-100 text-emerald-600' : 'bg-blue-100 text-blue-600'
+            }`}>
               <CheckCircle2 className="w-8 h-8" />
             </div>
 
-            <h3 className="text-lg font-bold text-slate-900">✓ Staff invitation sent</h3>
+            <h3 className="text-lg font-bold text-slate-900">
+              {invitationSuccess.emailSent ? '✓ Staff invitation dispatched' : '✓ Staff account created'}
+            </h3>
             <div className="text-base font-bold text-slate-900 mt-2">{invitationSuccess.member.user_name}</div>
             <div className="text-xs font-mono text-slate-500">{invitationSuccess.member.user_email}</div>
+
+            {/* Email Delivery Status Badge */}
+            <div className="mt-3 flex items-center justify-center">
+              {invitationSuccess.emailSent ? (
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                  Invitation Email Sent via SendLib
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-amber-50 text-amber-800 border border-amber-200">
+                  <Mail className="w-3.5 h-3.5 text-amber-600" />
+                  Account Saved • Manual Link Ready
+                </span>
+              )}
+            </div>
 
             <div className="mt-3 p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-700 flex justify-between">
               <span>Role: <strong className="capitalize">{formatRoleName(invitationSuccess.member.role)}</strong></span>
@@ -1081,7 +1121,9 @@ export const StaffView: React.FC<StaffViewProps> = ({ onOpenInvitationToken }) =
             </div>
 
             <p className="text-xs text-slate-500 mt-3 leading-relaxed">
-              {invitationSuccess.member.user_name} will receive an invitation email with instructions to join your store.
+              {invitationSuccess.emailSent
+                ? `${invitationSuccess.member.user_name} has received an invitation email sent via SendLib with instructions to join.`
+                : `Account created successfully! ${invitationSuccess.emailError ? `SendLib notice: ${invitationSuccess.emailError}. ` : ''}You can share the invitation link directly below.`}
             </p>
 
             {/* Quick Link Share & Copy */}

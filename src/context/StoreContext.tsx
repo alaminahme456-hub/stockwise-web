@@ -84,8 +84,14 @@ interface StoreContextType {
     role: string;
     permissions: string[];
     notes?: string;
-  }) => Promise<{ member: StoreMember; invitation: StaffInvitation }>;
-  resendInvite: (invitationId: string) => Promise<StaffInvitation>;
+  }) => Promise<{
+    member: StoreMember;
+    invitation: StaffInvitation;
+    accountCreated: boolean;
+    emailSent: boolean;
+    emailError?: string;
+  }>;
+  resendInvite: (invitationId: string) => Promise<StaffInvitation & { emailSent?: boolean; emailError?: string }>;
   cancelInvite: (invitationId: string) => Promise<void>;
   updateStaffPermissions: (memberId: string, role: string, permissions: string[]) => Promise<StoreMember>;
   suspendStaff: (memberId: string) => Promise<StoreMember>;
@@ -413,6 +419,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     if (!currentStore) throw new Error('No store selected');
     if (!user) throw new Error('Not authenticated');
 
+    // 1. Save staff account first (Principle: Even if email fails, do not delete the staff account)
     const result = await apiCreateStaffInvitation({
       storeId: currentStore.id,
       storeName: currentStore.name,
@@ -429,7 +436,46 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setMembers((prev) => [result.member, ...prev]);
     setStaffInvitations((prev) => [result.invitation, ...prev]);
     fetchStaffActivity(currentStore.id).then(setStaffActivity).catch(console.warn);
-    return result;
+
+    // 2. Call backend Sendlib email service
+    let emailSent = false;
+    let emailError: string | undefined = undefined;
+
+    try {
+      const origin = typeof window !== 'undefined' ? window.location.origin : '';
+      const inviteUrl = `${origin}/?invite=${result.invitation.token}`;
+      const response = await fetch('/api/staff-invite-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          to: params.email.trim(),
+          staffName: params.name.trim(),
+          storeName: currentStore.name,
+          role: params.role,
+          invitedByName: user.user_metadata?.full_name || user.email || 'Store Owner',
+          inviteUrl,
+          expiresAt: result.invitation.expires_at,
+          permissionsCount: params.permissions.length,
+        }),
+      });
+
+      const emailData = await response.json().catch(() => ({}));
+      if (response.ok && emailData.success) {
+        emailSent = true;
+      } else {
+        emailError = emailData.error || `SendLib dispatch returned status ${response.status}`;
+      }
+    } catch (err: any) {
+      emailError = err?.message || 'Failed to dispatch staff invitation email.';
+    }
+
+    return {
+      member: result.member,
+      invitation: result.invitation,
+      accountCreated: true,
+      emailSent,
+      emailError,
+    };
   };
 
   const resendInvite = async (invitationId: string) => {
@@ -438,7 +484,39 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const updated = await apiResendStaffInvitation(currentStore.id, invitationId, performer);
     setStaffInvitations((prev) => prev.map((i) => (i.id === invitationId ? updated : i)));
     fetchStaffActivity(currentStore.id).then(setStaffActivity).catch(console.warn);
-    return updated;
+
+    let emailSent = false;
+    let emailError: string | undefined = undefined;
+
+    try {
+      const origin = typeof window !== 'undefined' ? window.location.origin : '';
+      const inviteUrl = `${origin}/?invite=${updated.token}`;
+      const response = await fetch('/api/staff-invite-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          to: updated.email.trim(),
+          staffName: updated.name.trim(),
+          storeName: currentStore.name,
+          role: updated.role,
+          invitedByName: performer,
+          inviteUrl,
+          expiresAt: updated.expires_at,
+          permissionsCount: updated.permissions?.length || 0,
+        }),
+      });
+
+      const emailData = await response.json().catch(() => ({}));
+      if (response.ok && emailData.success) {
+        emailSent = true;
+      } else {
+        emailError = emailData.error || `SendLib dispatch returned status ${response.status}`;
+      }
+    } catch (err: any) {
+      emailError = err?.message || 'Failed to dispatch staff invitation email.';
+    }
+
+    return Object.assign(updated, { emailSent, emailError });
   };
 
   const cancelInvite = async (invitationId: string) => {

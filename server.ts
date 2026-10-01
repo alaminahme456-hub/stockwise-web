@@ -1,8 +1,9 @@
 import express from 'express';
 import dotenv from 'dotenv';
 import path from 'path';
+import fs from 'fs';
 import { fileURLToPath } from 'url';
-import { sendEmail, buildStaffInvitationHtml } from './server/sendlibService.js';
+import { sendEmail, buildStaffInvitationHtml } from './server/sendlibService.ts';
 
 dotenv.config();
 
@@ -11,6 +12,16 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 const PORT = 3000;
+
+app.use((req, res, next) => {
+  try {
+    fs.appendFileSync(
+      path.resolve(__dirname, 'server_debug.log'),
+      `[${new Date().toISOString()}] ${req.method} ${req.originalUrl || req.url}\n`
+    );
+  } catch {}
+  next();
+});
 
 app.use(express.json());
 

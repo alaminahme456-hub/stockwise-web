@@ -407,6 +407,50 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setCustomerPayments((prev) => prev.filter((p) => p.id !== paymentId));
   };
 
+  // Helper to dispatch SendLib staff invitation email with automatic retry
+  const dispatchStaffInviteEmail = async (payload: {
+    to: string;
+    staffName: string;
+    storeName: string;
+    role: string;
+    invitedByName: string;
+    inviteUrl: string;
+    expiresAt?: string;
+    permissionsCount?: number;
+  }): Promise<{ emailSent: boolean; emailError?: string }> => {
+    const fetchUrl = `${typeof window !== 'undefined' ? window.location.origin : ''}/api/staff-invite-email`;
+    const options = {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    };
+
+    try {
+      let response = await fetch(fetchUrl, options);
+
+      // If server is in a transient reload or warmup state, retry once after a short delay
+      if (response.status === 404 || response.status === 502 || response.status === 503) {
+        await new Promise((r) => setTimeout(r, 1200));
+        response = await fetch(fetchUrl, options);
+      }
+
+      const emailData = await response.json().catch(() => ({}));
+      if (response.ok && emailData.success) {
+        return { emailSent: true };
+      }
+
+      return {
+        emailSent: false,
+        emailError: emailData.error || `SendLib dispatch returned status ${response.status}`,
+      };
+    } catch (err: any) {
+      return {
+        emailSent: false,
+        emailError: err?.message || 'Failed to dispatch staff invitation email.',
+      };
+    }
+  };
+
   // Staff Management Implementations
   const inviteStaff = async (params: {
     name: string;
@@ -438,45 +482,25 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     fetchStaffActivity(currentStore.id).then(setStaffActivity).catch(console.warn);
 
     // 2. Call backend Sendlib email service
-    let emailSent = false;
-    let emailError: string | undefined = undefined;
-
-    try {
-      const origin = typeof window !== 'undefined' ? window.location.origin : '';
-      const inviteUrl = `${origin}/?invite=${result.invitation.token}`;
-      const response = await fetch('/api/staff-invite-email', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          to: params.email.trim(),
-          staffName: params.name.trim(),
-          storeName: currentStore.name,
-          role: params.role,
-          invitedByName: user.user_metadata?.full_name || user.email || 'Store Owner',
-          inviteUrl,
-          expiresAt: result.invitation.expires_at,
-          permissionsCount: params.permissions.length,
-        }),
-      });
-
-      const emailData = await response.json().catch(() => ({}));
-      if (response.ok && emailData.success) {
-        emailSent = true;
-      } else {
-        emailError = emailData.error || (response.status === 404 
-          ? 'SendLib email endpoint temporarily warming up (HTTP 404). The invitation link is active.' 
-          : `SendLib dispatch returned status ${response.status}`);
-      }
-    } catch (err: any) {
-      emailError = err?.message || 'Failed to dispatch staff invitation email.';
-    }
+    const origin = typeof window !== 'undefined' ? window.location.origin : '';
+    const inviteUrl = `${origin}/?invite=${result.invitation.token}`;
+    const emailResult = await dispatchStaffInviteEmail({
+      to: params.email.trim(),
+      staffName: params.name.trim(),
+      storeName: currentStore.name,
+      role: params.role,
+      invitedByName: user.user_metadata?.full_name || user.email || 'Store Owner',
+      inviteUrl,
+      expiresAt: result.invitation.expires_at,
+      permissionsCount: params.permissions.length,
+    });
 
     return {
       member: result.member,
       invitation: result.invitation,
       accountCreated: true,
-      emailSent,
-      emailError,
+      emailSent: emailResult.emailSent,
+      emailError: emailResult.emailError,
     };
   };
 
@@ -487,43 +511,26 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setStaffInvitations((prev) => prev.map((i) => (i.id === invitationId ? updated : i)));
     fetchStaffActivity(currentStore.id).then(setStaffActivity).catch(console.warn);
 
-    let emailSent = false;
-    let emailError: string | undefined = undefined;
+    const origin = typeof window !== 'undefined' ? window.location.origin : '';
+    const inviteUrl = `${origin}/?invite=${updated.token}`;
+    const recipientEmail = (updated.email || (updated as any).user_email || '').trim();
+    const staffName = (updated.name || (updated as any).user_name || 'Team Member').trim();
 
-    try {
-      const origin = typeof window !== 'undefined' ? window.location.origin : '';
-      const inviteUrl = `${origin}/?invite=${updated.token}`;
-      const recipientEmail = (updated.email || (updated as any).user_email || '').trim();
-      const staffName = (updated.name || (updated as any).user_name || 'Team Member').trim();
+    const emailResult = await dispatchStaffInviteEmail({
+      to: recipientEmail,
+      staffName,
+      storeName: currentStore.name || updated.store_name || 'StockWise Store',
+      role: updated.role || 'cashier',
+      invitedByName: performer,
+      inviteUrl,
+      expiresAt: updated.expires_at,
+      permissionsCount: updated.permissions?.length || 0,
+    });
 
-      const response = await fetch('/api/staff-invite-email', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          to: recipientEmail,
-          staffName,
-          storeName: currentStore.name || updated.store_name || 'StockWise Store',
-          role: updated.role || 'cashier',
-          invitedByName: performer,
-          inviteUrl,
-          expiresAt: updated.expires_at,
-          permissionsCount: updated.permissions?.length || 0,
-        }),
-      });
-
-      const emailData = await response.json().catch(() => ({}));
-      if (response.ok && emailData.success) {
-        emailSent = true;
-      } else {
-        emailError = emailData.error || (response.status === 404
-          ? 'SendLib email endpoint temporarily warming up (HTTP 404). The invitation link is active.'
-          : `SendLib dispatch returned status ${response.status}`);
-      }
-    } catch (err: any) {
-      emailError = err?.message || 'Failed to dispatch staff invitation email.';
-    }
-
-    return Object.assign(updated, { emailSent, emailError });
+    return Object.assign(updated, {
+      emailSent: emailResult.emailSent,
+      emailError: emailResult.emailError,
+    });
   };
 
   const cancelInvite = async (invitationId: string) => {

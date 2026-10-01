@@ -1,42 +1,30 @@
 import React, { useState, useMemo } from 'react';
 import { useStore } from '../context/StoreContext';
 import { useAuth } from '../context/AuthContext';
-import { useToast } from '../context/ToastContext';
 import { formatCurrency, formatDate } from '../lib/utils';
-import { updateStoreSettings } from '../lib/db';
-import { StoreSetupProgress } from './StoreSetupProgress';
-import { ActionableInsights } from './ActionableInsights';
 import { 
   TrendingUp, 
   DollarSign, 
   Package, 
   AlertTriangle, 
-  Users, 
   Receipt, 
-  ArrowRight, 
   ShoppingCart, 
   BarChart3, 
   Settings, 
+  Users, 
   Truck, 
   ShieldCheck, 
   Crown, 
-  CheckCircle2, 
-  X, 
   ChevronRight, 
   Store as StoreIcon, 
-  Building2, 
-  Clock, 
-  Lock,
-  Layers,
-  Sparkles,
-  Target,
-  Edit2,
-  Check,
-  CreditCard,
-  Plus,
-  Bell
+  X, 
+  Check, 
+  CheckCircle2, 
+  Layers, 
+  ArrowRight, 
+  Lock 
 } from 'lucide-react';
-import { DateRangeFilter, NavigationTab, Sale } from '../types';
+import { NavigationTab, Sale } from '../types';
 
 interface DashboardViewProps {
   onNavigate: (tab: NavigationTab, customerId?: string) => void;
@@ -48,20 +36,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onView
     currentStore, 
     sales, 
     products, 
-    customers, 
-    expenses, 
-    customerPayments, 
-    settings,
-    refreshStoreData, 
     hasPermission,
     isStoreOwner
   } = useStore();
-  const { user, profile } = useAuth();
-  const { showToast } = useToast();
+  const { user } = useAuth();
 
   const canViewRevenue = isStoreOwner || hasPermission('financials.view_revenue');
-  const canViewProfit = isStoreOwner || hasPermission('financials.view_profit');
-  const canViewExpenses = isStoreOwner || hasPermission('financials.view_expenses');
   const canViewReports = isStoreOwner || hasPermission('reports.view');
   const canViewStaff = isStoreOwner || hasPermission('staff.view');
   const canViewSettings = isStoreOwner || hasPermission('settings.view');
@@ -72,83 +52,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onView
   const canCreateSale = isStoreOwner || hasPermission('sales.create');
   const canViewSales = isStoreOwner || hasPermission('sales.view');
 
-  const [dateRange, setDateRange] = useState<DateRangeFilter>('month');
   const [subscriptionModalOpen, setSubscriptionModalOpen] = useState(false);
-  
-  // Sales Target Configuration (Principle 3: Make business progress visible)
-  const [targetModalOpen, setTargetModalOpen] = useState(false);
-  const [targetInput, setTargetInput] = useState(() => (settings?.daily_sales_target ? String(settings.daily_sales_target) : ''));
-  const [savingTarget, setSavingTarget] = useState(false);
-  const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [subscriptionPlan, setSubscriptionPlan] = useState<'pro' | 'enterprise'>('pro');
+  const [subscriptionFeedback, setSubscriptionFeedback] = useState<string | null>(null);
 
-  // Time-of-day greeting (Principle 5 & 16: Endowment & Personalization)
-  const greeting = useMemo(() => {
-    const hour = new Date().getHours();
-    if (hour < 12) return 'Good morning';
-    if (hour < 17) return 'Good afternoon';
-    return 'Good evening';
-  }, []);
-
-  const userName = profile?.full_name || user?.email?.split('@')[0] || 'Store Owner';
-
-  const userInitials = useMemo(() => {
-    return (userName || 'SW')
-      .split(' ')
-      .filter(Boolean)
-      .map((w: string) => w[0])
-      .join('')
-      .slice(0, 2)
-      .toUpperCase();
-  }, [userName]);
-
-  // Filter items by selected date range
-  const filteredSales = useMemo(() => {
-    const now = new Date();
-    return sales.filter((s) => {
-      const saleDate = new Date(s.created_at);
-      if (dateRange === 'today') {
-        return (
-          saleDate.getDate() === now.getDate() &&
-          saleDate.getMonth() === now.getMonth() &&
-          saleDate.getFullYear() === now.getFullYear()
-        );
-      } else if (dateRange === 'week') {
-        const oneWeekAgo = new Date();
-        oneWeekAgo.setDate(now.getDate() - 7);
-        return saleDate >= oneWeekAgo;
-      } else if (dateRange === 'month') {
-        const oneMonthAgo = new Date();
-        oneMonthAgo.setMonth(now.getMonth() - 1);
-        return saleDate >= oneMonthAgo;
-      }
-      return true;
-    });
-  }, [sales, dateRange]);
-
-  const filteredExpenses = useMemo(() => {
-    const now = new Date();
-    return expenses.filter((e) => {
-      const expDate = new Date(e.expense_date);
-      if (dateRange === 'today') {
-        return (
-          expDate.getDate() === now.getDate() &&
-          expDate.getMonth() === now.getMonth() &&
-          expDate.getFullYear() === now.getFullYear()
-        );
-      } else if (dateRange === 'week') {
-        const oneWeekAgo = new Date();
-        oneWeekAgo.setDate(now.getDate() - 7);
-        return expDate >= oneWeekAgo;
-      } else if (dateRange === 'month') {
-        const oneMonthAgo = new Date();
-        oneMonthAgo.setMonth(now.getMonth() - 1);
-        return expDate >= oneMonthAgo;
-      }
-      return true;
-    });
-  }, [expenses, dateRange]);
-
-  // Today's specific sales & metrics
+  // Today's specific sales
   const todaySales = useMemo(() => {
     const today = new Date().toDateString();
     return sales.filter((s) => new Date(s.created_at).toDateString() === today);
@@ -160,143 +68,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onView
 
   const todaySalesCount = todaySales.length;
 
-  // Yesterday's specific sales (Contrast / Anchoring - Principle 7)
-  const yesterdaySales = useMemo(() => {
-    const yesterday = new Date();
-    yesterday.setDate(yesterday.getDate() - 1);
-    const yesterdayStr = yesterday.toDateString();
-    return sales.filter((s) => new Date(s.created_at).toDateString() === yesterdayStr);
-  }, [sales]);
-
-  const yesterdaySalesAmount = useMemo(() => {
-    return yesterdaySales.reduce((sum, s) => sum + Number(s.total_amount), 0);
-  }, [yesterdaySales]);
-
-  const salesDiff = todaySalesAmount - yesterdaySalesAmount;
-  const salesDiffPercent = yesterdaySalesAmount > 0 
-    ? Math.round(((todaySalesAmount - yesterdaySalesAmount) / yesterdaySalesAmount) * 100) 
-    : null;
-
-  // Today's Sales Target calculation (Principle 3)
-  const configuredTarget = settings?.daily_sales_target ? Number(settings.daily_sales_target) : null;
-  const targetProgressPercent = configuredTarget && configuredTarget > 0 
-    ? Math.min(100, Math.round((todaySalesAmount / configuredTarget) * 100))
-    : null;
-
   // Total sales amount (all time in current store)
   const totalSalesAmount = useMemo(() => {
     return sales.reduce((sum, s) => sum + Number(s.total_amount), 0);
   }, [sales]);
-
-  // Total cost of goods sold in selected range
-  const totalCogs = useMemo(() => {
-    let cogs = 0;
-    filteredSales.forEach((s) => {
-      if (s.items) {
-        s.items.forEach((item) => {
-          cogs += Number(item.cost_price || 0) * Number(item.quantity);
-        });
-      }
-    });
-    return cogs;
-  }, [filteredSales]);
-
-  // Total expenses in selected range
-  const totalExpensesAmount = useMemo(() => {
-    return filteredExpenses.reduce((sum, e) => sum + Number(e.amount), 0);
-  }, [filteredExpenses]);
-
-  // Estimated Net Profit
-  const estimatedProfit = useMemo(() => {
-    const periodSales = filteredSales.reduce((sum, s) => sum + Number(s.total_amount), 0);
-    return periodSales - totalCogs - totalExpensesAmount;
-  }, [filteredSales, totalCogs, totalExpensesAmount]);
-
-  // Customer Credit Overview (Principle 13)
-  const creditOverview = useMemo(() => {
-    const creditSales = sales.filter((s) => s.payment_method === 'credit');
-    const totalCreditIssued = creditSales.reduce((sum, s) => sum + Number(s.total_amount || 0), 0);
-    const totalRepaymentsReceived = customerPayments.reduce((sum, p) => sum + Number(p.amount || 0), 0);
-    const totalOutstandingCredit = Math.max(0, Math.round((totalCreditIssued - totalRepaymentsReceived) * 100) / 100);
-
-    const debtors: {
-      customerId: string;
-      customerName: string;
-      phone?: string | null;
-      creditTaken: number;
-      repaid: number;
-      outstandingBalance: number;
-    }[] = [];
-
-    customers.forEach((c) => {
-      const custSales = creditSales.filter((s) => s.customer_id === c.id);
-      const custPayments = customerPayments.filter((p) => p.customer_id === c.id);
-      const creditTaken = custSales.reduce((sum, s) => sum + Number(s.total_amount || 0), 0);
-      const repaid = custPayments.reduce((sum, p) => sum + Number(p.amount || 0), 0);
-      const balance = Math.max(0, Math.round((creditTaken - repaid) * 100) / 100);
-
-      if (balance > 0) {
-        debtors.push({
-          customerId: c.id,
-          customerName: c.name,
-          phone: c.phone,
-          creditTaken,
-          repaid,
-          outstandingBalance: balance,
-        });
-      }
-    });
-
-    debtors.sort((a, b) => b.outstandingBalance - a.outstandingBalance);
-
-    interface CreditTx {
-      id: string;
-      date: string;
-      type: 'credit_sale' | 'repayment';
-      customerName: string;
-      customerId?: string | null;
-      amount: number;
-      reference: string;
-      notes?: string | null;
-    }
-
-    const txs: CreditTx[] = [
-      ...creditSales.map((s) => ({
-        id: `sale-${s.id}`,
-        date: s.created_at,
-        type: 'credit_sale' as const,
-        customerName: s.customer_name || 'Customer',
-        customerId: s.customer_id,
-        amount: Number(s.total_amount || 0),
-        reference: `#${s.id.slice(0, 8).toUpperCase()}`,
-        notes: s.notes,
-      })),
-      ...customerPayments.map((p) => {
-        const matchingCust = customers.find((c) => c.id === p.customer_id);
-        return {
-          id: `pay-${p.id}`,
-          date: p.payment_date || p.created_at,
-          type: 'repayment' as const,
-          customerName: p.customer_name || matchingCust?.name || 'Customer',
-          customerId: p.customer_id,
-          amount: Number(p.amount || 0),
-          reference: p.reference_id || `#${p.id.slice(0, 8).toUpperCase()}`,
-          notes: p.notes,
-        };
-      }),
-    ];
-
-    txs.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-
-    return {
-      totalCreditIssued,
-      totalRepaymentsReceived,
-      totalOutstandingCredit,
-      debtorsCount: debtors.length,
-      debtors,
-      recentCreditTransactions: txs.slice(0, 5),
-    };
-  }, [sales, customerPayments, customers]);
 
   // Inventory stats
   const totalProductsCount = products.length;
@@ -312,215 +87,55 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onView
 
   const currency = currentStore?.currency || 'USD';
 
-  // Save Target Handler
-  const handleSaveTarget = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!currentStore) return;
-    const val = parseFloat(targetInput);
-    setSavingTarget(true);
-    try {
-      await updateStoreSettings(currentStore.id, {
-        daily_sales_target: !isNaN(val) && val > 0 ? val : null,
-      });
-      await refreshStoreData();
-      showToast('✓ Daily sales target updated successfully!', 'success');
-      setTargetModalOpen(false);
-    } catch {
-      showToast('Could not save target. Please try again.', 'error');
-    } finally {
-      setSavingTarget(false);
-    }
-  };
-
   return (
     <div className="space-y-5 sm:space-y-6">
       {/* ======================================================== */}
-      {/* 1. TOP BAR: APP NAME, NOTIFICATION ICON, PROFILE AVATAR  */}
+      {/* DASHBOARD OVERVIEW CARD (TITLE, BUSINESS NAME, POS)      */}
       {/* ======================================================== */}
-      <div className="flex items-center justify-between pb-1">
-        <div className="flex items-center gap-2.5">
-          <div className="w-9 h-9 rounded-xl bg-blue-600 flex items-center justify-center text-white shadow-md shadow-blue-600/30">
-            <StoreIcon className="w-5 h-5 text-white" />
-          </div>
-          <div>
-            <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight leading-none">
-              StockWise
-            </h1>
-            <p className="text-[11px] text-slate-500 font-medium mt-0.5">
-              Multi-store retail inventory &amp; POS
+      <div className="relative overflow-hidden rounded-2xl sm:rounded-3xl bg-gradient-to-br from-blue-600 via-blue-700 to-indigo-800 text-white p-5 sm:p-6 shadow-md shadow-blue-500/15">
+        {/* Subtle decorative glow */}
+        <div className="absolute top-0 right-0 -mr-10 -mt-10 w-48 h-48 rounded-full bg-white/10 blur-xl pointer-events-none" />
+        
+        <div className="relative z-10 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div className="space-y-1.5">
+            <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-white/15 text-blue-100 text-xs font-semibold uppercase tracking-wider backdrop-blur-xs">
+              <StoreIcon className="w-3.5 h-3.5" />
+              <span>Dashboard Overview</span>
+            </div>
+            <h2 className="text-xl sm:text-2xl lg:text-3xl font-bold tracking-tight text-white">
+              {currentStore?.business_name || currentStore?.name || 'StockWise Store'}
+            </h2>
+            <p className="text-xs sm:text-sm text-blue-100/85 flex items-center gap-2 font-medium">
+              <span>{currentStore?.currency || 'USD'} Register</span>
+              <span>•</span>
+              <span>{new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}</span>
             </p>
           </div>
-        </div>
 
-        <div className="flex items-center gap-2.5 sm:gap-3">
-          {/* Notification Icon */}
-          <div className="relative">
-            <button
-              type="button"
-              id="btn-notifications-toggle"
-              onClick={() => setNotificationsOpen(!notificationsOpen)}
-              className="w-10 h-10 rounded-xl bg-white border border-slate-200 hover:border-slate-300 text-slate-700 hover:bg-slate-50 flex items-center justify-center transition shadow-xs cursor-pointer relative"
-              title="Notifications & Alerts"
-              aria-label="Notifications"
-            >
-              <Bell className="w-4 h-4 text-slate-700" />
-              {(lowStockProducts.length + outOfStockProducts.length > 0 || creditOverview.debtorsCount > 0) && (
-                <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-red-600 text-white text-[10px] font-bold flex items-center justify-center ring-2 ring-white">
-                  {lowStockProducts.length + outOfStockProducts.length + (creditOverview.debtorsCount > 0 ? 1 : 0)}
-                </span>
-              )}
-            </button>
-
-            {/* Notification Popover Dropdown */}
-            {notificationsOpen && (
-              <div className="absolute right-0 mt-2 w-80 sm:w-88 bg-white rounded-2xl shadow-xl border border-slate-200 z-50 p-4 animate-in fade-in zoom-in-95 duration-100 space-y-3">
-                <div className="flex items-center justify-between pb-2 border-b border-slate-100">
-                  <div className="flex items-center gap-1.5">
-                    <Bell className="w-4 h-4 text-blue-600" />
-                    <span className="text-xs font-bold text-slate-900">Notifications &amp; Alerts</span>
-                  </div>
-                  <button 
-                    type="button" 
-                    onClick={() => setNotificationsOpen(false)}
-                    className="text-slate-400 hover:text-slate-600 p-0.5 cursor-pointer"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-                </div>
-
-                <div className="space-y-2 text-xs">
-                  {lowStockProducts.length + outOfStockProducts.length > 0 && (
-                    <div 
-                      onClick={() => {
-                        setNotificationsOpen(false);
-                        onNavigate('inventory');
-                      }}
-                      className="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 cursor-pointer hover:bg-amber-100/70 transition flex items-start gap-2.5"
-                    >
-                      <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-                      <div>
-                        <div className="font-bold">Inventory Low Stock Alert</div>
-                        <div className="text-[11px] text-amber-800 mt-0.5">
-                          {lowStockProducts.length + outOfStockProducts.length} items require replenishment.
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {creditOverview.totalOutstandingCredit > 0 && (
-                    <div 
-                      onClick={() => {
-                        setNotificationsOpen(false);
-                        onNavigate('customers');
-                      }}
-                      className="p-2.5 rounded-xl bg-purple-50 border border-purple-200 text-purple-900 cursor-pointer hover:bg-purple-100/70 transition flex items-start gap-2.5"
-                    >
-                      <CreditCard className="w-4 h-4 text-purple-600 shrink-0 mt-0.5" />
-                      <div>
-                        <div className="font-bold">Customer Credit Outstanding</div>
-                        <div className="text-[11px] text-purple-800 mt-0.5">
-                          {formatCurrency(creditOverview.totalOutstandingCredit, currency)} across {creditOverview.debtorsCount} debtors.
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {todaySalesCount > 0 ? (
-                    <div 
-                      onClick={() => {
-                        setNotificationsOpen(false);
-                        onNavigate('transactions');
-                      }}
-                      className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-900 cursor-pointer hover:bg-emerald-100/70 transition flex items-start gap-2.5"
-                    >
-                      <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
-                      <div>
-                        <div className="font-bold">Today&apos;s Store Performance</div>
-                        <div className="text-[11px] text-emerald-800 mt-0.5">
-                          {todaySalesCount} sales processed ({formatCurrency(todaySalesAmount, currency)}).
-                        </div>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="p-3 text-center text-slate-400 text-xs">
-                      No sales yet today. Open the POS to ring up your first order.
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Profile Avatar */}
+          {/* Prominent POS Sale Button */}
           <button
             type="button"
-            id="btn-profile-avatar"
-            onClick={() => onNavigate('settings')}
-            className="flex items-center gap-2.5 pl-1.5 pr-3 py-1 rounded-xl bg-white border border-slate-200 hover:border-slate-300 transition shadow-xs cursor-pointer group"
-            title="Profile & Store Settings"
+            id="btn-overview-pos-sale"
+            onClick={() => onNavigate('pos')}
+            className="inline-flex items-center justify-center gap-2.5 px-6 py-3.5 rounded-xl bg-white text-blue-700 hover:bg-blue-50 active:bg-blue-100 font-bold text-sm shadow-md transition group self-start sm:self-auto cursor-pointer active:scale-95"
           >
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-blue-600 to-indigo-600 text-white font-bold text-xs flex items-center justify-center uppercase shadow-xs">
-              {userInitials}
-            </div>
-            <div className="hidden sm:block text-left text-xs">
-              <div className="font-bold text-slate-800 leading-tight group-hover:text-blue-600 transition truncate max-w-[120px]">
-                {userName}
-              </div>
-              <div className="text-[10px] text-slate-400 capitalize">
-                {profile?.role || 'Administrator'}
-              </div>
-            </div>
+            <ShoppingCart className="w-4 h-4 text-blue-600 group-hover:scale-110 transition-transform" />
+            <span>POS Sale</span>
+            <ArrowRight className="w-4 h-4 text-blue-600 group-hover:translate-x-0.5 transition-transform" />
           </button>
         </div>
       </div>
 
       {/* ======================================================== */}
-      {/* 2. DASHBOARD OVERVIEW CARD                               */}
-      {/* ======================================================== */}
-      <div className="relative overflow-hidden rounded-2xl sm:rounded-3xl bg-slate-900 text-white p-5 sm:p-7 border border-slate-800 shadow-md">
-        <div className="relative z-10 flex flex-col md:flex-row md:items-center md:justify-between gap-5">
-          <div className="space-y-1.5">
-            <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-blue-500/20 text-blue-300 text-xs font-semibold">
-              <StoreIcon className="w-3.5 h-3.5" />
-              <span>Dashboard Overview</span>
-            </div>
-            
-            <h2 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-white">
-              {currentStore?.business_name || currentStore?.name || 'StockWise Store'}
-            </h2>
-            
-            <p className="text-xs sm:text-sm text-slate-400 flex items-center gap-2 font-medium">
-              <span>{greeting}, {userName}</span>
-              <span>·</span>
-              <span>{currency} Workspace</span>
-              <span>·</span>
-              <span>{new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric', year: 'numeric' })}</span>
-            </p>
-          </div>
-
-          <div className="flex items-center gap-3">
-            <button
-              type="button"
-              id="btn-overview-pos-sale"
-              onClick={() => onNavigate('pos')}
-              className="w-full sm:w-auto inline-flex items-center justify-center gap-2.5 px-6 py-3.5 rounded-xl bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white font-bold text-sm shadow-lg shadow-blue-600/30 transition group cursor-pointer active:scale-95"
-            >
-              <ShoppingCart className="w-4 h-4 text-white group-hover:scale-110 transition-transform" />
-              <span>POS Sale</span>
-              <ArrowRight className="w-4 h-4 text-white group-hover:translate-x-0.5 transition-transform" />
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* ======================================================== */}
-      {/* 3. 2x2 GRID DISPLAYING KEY METRICS                       */}
+      {/* 3. 2x2 GRID DISPLAYING KEY METRICS:                     */}
+      {/*    "Today's Revenue", "Total Sales", "Total Products",   */}
+      {/*    and "Low Stock Alert"                                 */}
       {/* ======================================================== */}
       <div className="grid grid-cols-2 gap-3 sm:gap-4.5">
         {/* Metric 1: Today's Revenue */}
         <div 
           onClick={() => canViewSales && onNavigate('transactions')}
-          className={`bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-xs transition flex flex-col justify-between ${
+          className={`bg-white p-4 sm:p-5 rounded-2xl border border-slate-200/90 shadow-xs transition flex flex-col justify-between ${
             canViewSales ? 'hover:border-blue-300 hover:shadow-sm cursor-pointer' : 'cursor-default'
           }`}
         >
@@ -531,7 +146,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onView
             </div>
           </div>
           <div className="mt-2 sm:mt-3">
-            <div className="text-lg sm:text-2xl font-black text-slate-900 tracking-tight font-mono tabular-nums">
+            <div className="text-lg sm:text-2xl font-black text-slate-900 tracking-tight flex items-center gap-1.5">
               {canViewRevenue ? (
                 formatCurrency(todaySalesAmount, currency)
               ) : (
@@ -541,8 +156,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onView
                 </span>
               )}
             </div>
-            <div className="mt-1 text-[11px] sm:text-xs text-slate-500 font-medium">
-              <span>{todaySalesCount} {todaySalesCount === 1 ? 'sale' : 'sales'} completed today</span>
+            <div className="mt-1 text-[11px] sm:text-xs text-emerald-600 font-medium flex items-center gap-1">
+              <span>{todaySalesCount} {todaySalesCount === 1 ? 'sale' : 'sales'} today</span>
             </div>
           </div>
         </div>
@@ -550,7 +165,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onView
         {/* Metric 2: Total Sales */}
         <div 
           onClick={() => canViewSales && onNavigate('transactions')}
-          className={`bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-xs transition flex flex-col justify-between ${
+          className={`bg-white p-4 sm:p-5 rounded-2xl border border-slate-200/90 shadow-xs transition flex flex-col justify-between ${
             canViewSales ? 'hover:border-blue-300 hover:shadow-sm cursor-pointer' : 'cursor-default'
           }`}
         >
@@ -561,7 +176,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onView
             </div>
           </div>
           <div className="mt-2 sm:mt-3">
-            <div className="text-lg sm:text-2xl font-black text-slate-900 tracking-tight font-mono tabular-nums">
+            <div className="text-lg sm:text-2xl font-black text-slate-900 tracking-tight flex items-center gap-1.5">
               {canViewRevenue ? (
                 formatCurrency(totalSalesAmount, currency)
               ) : (
@@ -580,7 +195,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onView
         {/* Metric 3: Total Products */}
         <div 
           onClick={() => canViewProducts && onNavigate('products')}
-          className={`bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-xs transition flex flex-col justify-between ${
+          className={`bg-white p-4 sm:p-5 rounded-2xl border border-slate-200/90 shadow-xs transition flex flex-col justify-between ${
             canViewProducts ? 'hover:border-blue-300 hover:shadow-sm cursor-pointer' : 'cursor-default'
           }`}
         >
@@ -591,11 +206,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onView
             </div>
           </div>
           <div className="mt-2 sm:mt-3">
-            <div className="text-lg sm:text-2xl font-black text-slate-900 tracking-tight font-mono tabular-nums">
+            <div className="text-lg sm:text-2xl font-black text-slate-900 tracking-tight">
               {totalProductsCount}
             </div>
             <div className="mt-1 text-[11px] sm:text-xs text-slate-500 font-medium">
-              <span>{totalProductsCount - (lowStockProducts.length + outOfStockProducts.length)} in healthy stock</span>
+              <span>Active inventory items</span>
             </div>
           </div>
         </div>
@@ -614,19 +229,16 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onView
             </div>
           </div>
           <div className="mt-2 sm:mt-3">
-            <div className="text-lg sm:text-2xl font-black text-amber-900 tracking-tight font-mono tabular-nums flex items-center gap-1.5">
-              <span>{lowStockProducts.length + outOfStockProducts.length}</span>
-              {lowStockProducts.length + outOfStockProducts.length > 0 && (
-                <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-amber-200 text-amber-900">
-                  ⚠ Attention
-                </span>
-              )}
+            <div className="text-lg sm:text-2xl font-black text-amber-900 tracking-tight">
+              {lowStockProducts.length + outOfStockProducts.length}
             </div>
             <div className="mt-1 text-[11px] sm:text-xs text-amber-700 font-medium truncate">
               {lowStockProducts.length + outOfStockProducts.length > 0 ? (
-                <span>{lowStockProducts.length} low threshold · {outOfStockProducts.length} out of stock</span>
+                <span className="text-amber-800 font-semibold">
+                  {lowStockProducts.length} low, {outOfStockProducts.length} out
+                </span>
               ) : (
-                <span>✓ All inventory levels healthy</span>
+                <span>Stock levels healthy</span>
               )}
             </div>
           </div>
@@ -634,655 +246,416 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onView
       </div>
 
       {/* ======================================================== */}
-      {/* 4. MAIN MENU SECTION (GRID BUTTONS & WIDE SUBSCRIPTION)  */}
+      {/* 4. MAIN MENU SECTION WITH PERMISSION-FILTERED BUTTONS     */}
       {/* ======================================================== */}
-      <div className="space-y-3">
+      <div className="space-y-3.5">
         <div className="flex items-center justify-between">
-          <h2 className="text-base sm:text-lg font-bold text-slate-900 tracking-tight">
-            Main Menu
-          </h2>
-          <span className="text-xs text-slate-400 font-medium">Quick navigation</span>
+          <h2 className="text-base sm:text-lg font-bold text-slate-900 tracking-tight">Main Menu</h2>
+          <span className="text-xs text-slate-400 font-medium">Module Shortcuts</span>
         </div>
 
-        {/* Grid of 9 Menu Buttons */}
-        <div className="grid grid-cols-3 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-3 gap-2.5 sm:gap-3.5">
+        {/* Dynamic Grid Buttons */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 sm:gap-3.5">
           {/* 1. New Sale (POS) */}
-          <button
-            type="button"
-            onClick={() => onNavigate('pos')}
-            className="p-3 sm:p-4 rounded-2xl bg-white hover:bg-blue-50/50 border border-slate-200 hover:border-blue-300 shadow-xs hover:shadow-sm transition flex flex-col items-center justify-center text-center gap-2 group cursor-pointer active:scale-95"
-          >
-            <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center group-hover:scale-110 group-hover:bg-blue-600 group-hover:text-white transition-all shadow-xs">
-              <ShoppingCart className="w-5 h-5" />
-            </div>
-            <span className="text-xs sm:text-sm font-bold text-slate-800 group-hover:text-blue-600 transition">
-              New Sale (POS)
-            </span>
-          </button>
+          {(canCreateSale || canViewSales) && (
+            <button
+              type="button"
+              id="menu-btn-pos"
+              onClick={() => onNavigate('pos')}
+              className="p-3 sm:p-4 rounded-2xl bg-white border border-slate-200/90 shadow-xs hover:border-blue-400 hover:shadow-md transition text-center flex flex-col items-center justify-center gap-2 group active:scale-95 cursor-pointer"
+            >
+              <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-xl bg-blue-50 text-blue-600 group-hover:bg-blue-600 group-hover:text-white transition flex items-center justify-center">
+                <ShoppingCart className="w-5 h-5 sm:w-6 sm:h-6" />
+              </div>
+              <span className="text-xs sm:text-sm font-semibold text-slate-800 group-hover:text-blue-600 transition">
+                New Sale (POS)
+              </span>
+            </button>
+          )}
 
           {/* 2. Products */}
-          <button
-            type="button"
-            onClick={() => onNavigate('products')}
-            className="p-3 sm:p-4 rounded-2xl bg-white hover:bg-indigo-50/50 border border-slate-200 hover:border-indigo-300 shadow-xs hover:shadow-sm transition flex flex-col items-center justify-center text-center gap-2 group cursor-pointer active:scale-95"
-          >
-            <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center group-hover:scale-110 group-hover:bg-indigo-600 group-hover:text-white transition-all shadow-xs">
-              <Package className="w-5 h-5" />
-            </div>
-            <span className="text-xs sm:text-sm font-bold text-slate-800 group-hover:text-indigo-600 transition">
-              Products
-            </span>
-          </button>
+          {canViewProducts && (
+            <button
+              type="button"
+              id="menu-btn-products"
+              onClick={() => onNavigate('products')}
+              className="p-3 sm:p-4 rounded-2xl bg-white border border-slate-200/90 shadow-xs hover:border-indigo-400 hover:shadow-md transition text-center flex flex-col items-center justify-center gap-2 group active:scale-95 cursor-pointer"
+            >
+              <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-xl bg-indigo-50 text-indigo-600 group-hover:bg-indigo-600 group-hover:text-white transition flex items-center justify-center">
+                <Package className="w-5 h-5 sm:w-6 sm:h-6" />
+              </div>
+              <span className="text-xs sm:text-sm font-semibold text-slate-800 group-hover:text-indigo-600 transition">
+                Products
+              </span>
+            </button>
+          )}
 
           {/* 3. Inventory */}
-          <button
-            type="button"
-            onClick={() => onNavigate('inventory')}
-            className="p-3 sm:p-4 rounded-2xl bg-white hover:bg-amber-50/50 border border-slate-200 hover:border-amber-300 shadow-xs hover:shadow-sm transition flex flex-col items-center justify-center text-center gap-2 group cursor-pointer active:scale-95 relative"
-          >
-            {lowStockProducts.length + outOfStockProducts.length > 0 && (
-              <span className="absolute top-2 right-2 px-1.5 py-0.5 rounded-full bg-amber-500 text-white text-[10px] font-bold">
-                {lowStockProducts.length + outOfStockProducts.length}
+          {(canViewProducts || canAdjustStock) && (
+            <button
+              type="button"
+              id="menu-btn-inventory"
+              onClick={() => onNavigate('inventory')}
+              className="p-3 sm:p-4 rounded-2xl bg-white border border-slate-200/90 shadow-xs hover:border-amber-400 hover:shadow-md transition text-center flex flex-col items-center justify-center gap-2 group active:scale-95 cursor-pointer"
+            >
+              <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-xl bg-amber-50 text-amber-600 group-hover:bg-amber-600 group-hover:text-white transition flex items-center justify-center">
+                <Layers className="w-5 h-5 sm:w-6 sm:h-6" />
+              </div>
+              <span className="text-xs sm:text-sm font-semibold text-slate-800 group-hover:text-amber-700 transition">
+                Inventory
               </span>
-            )}
-            <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center group-hover:scale-110 group-hover:bg-amber-600 group-hover:text-white transition-all shadow-xs">
-              <Layers className="w-5 h-5" />
-            </div>
-            <span className="text-xs sm:text-sm font-bold text-slate-800 group-hover:text-amber-600 transition">
-              Inventory
-            </span>
-          </button>
+            </button>
+          )}
 
           {/* 4. Sales History */}
-          <button
-            type="button"
-            onClick={() => onNavigate('transactions')}
-            className="p-3 sm:p-4 rounded-2xl bg-white hover:bg-emerald-50/50 border border-slate-200 hover:border-emerald-300 shadow-xs hover:shadow-sm transition flex flex-col items-center justify-center text-center gap-2 group cursor-pointer active:scale-95"
-          >
-            <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center group-hover:scale-110 group-hover:bg-emerald-600 group-hover:text-white transition-all shadow-xs">
-              <Receipt className="w-5 h-5" />
-            </div>
-            <span className="text-xs sm:text-sm font-bold text-slate-800 group-hover:text-emerald-600 transition">
-              Sales History
-            </span>
-          </button>
+          {canViewSales && (
+            <button
+              type="button"
+              id="menu-btn-sales-history"
+              onClick={() => onNavigate('transactions')}
+              className="p-3 sm:p-4 rounded-2xl bg-white border border-slate-200/90 shadow-xs hover:border-emerald-400 hover:shadow-md transition text-center flex flex-col items-center justify-center gap-2 group active:scale-95 cursor-pointer"
+            >
+              <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-xl bg-emerald-50 text-emerald-600 group-hover:bg-emerald-600 group-hover:text-white transition flex items-center justify-center">
+                <Receipt className="w-5 h-5 sm:w-6 sm:h-6" />
+              </div>
+              <span className="text-xs sm:text-sm font-semibold text-slate-800 group-hover:text-emerald-700 transition">
+                Sales History
+              </span>
+            </button>
+          )}
 
           {/* 5. Reports */}
-          <button
-            type="button"
-            onClick={() => onNavigate('reports')}
-            className="p-3 sm:p-4 rounded-2xl bg-white hover:bg-blue-50/50 border border-slate-200 hover:border-blue-300 shadow-xs hover:shadow-sm transition flex flex-col items-center justify-center text-center gap-2 group cursor-pointer active:scale-95"
-          >
-            <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center group-hover:scale-110 group-hover:bg-blue-600 group-hover:text-white transition-all shadow-xs">
-              <BarChart3 className="w-5 h-5" />
-            </div>
-            <span className="text-xs sm:text-sm font-bold text-slate-800 group-hover:text-blue-600 transition">
-              Reports
-            </span>
-          </button>
+          {canViewReports && (
+            <button
+              type="button"
+              id="menu-btn-reports"
+              onClick={() => onNavigate('reports')}
+              className="p-3 sm:p-4 rounded-2xl bg-white border border-slate-200/90 shadow-xs hover:border-cyan-400 hover:shadow-md transition text-center flex flex-col items-center justify-center gap-2 group active:scale-95 cursor-pointer"
+            >
+              <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-xl bg-cyan-50 text-cyan-600 group-hover:bg-cyan-600 group-hover:text-white transition flex items-center justify-center">
+                <BarChart3 className="w-5 h-5 sm:w-6 sm:h-6" />
+              </div>
+              <span className="text-xs sm:text-sm font-semibold text-slate-800 group-hover:text-cyan-700 transition">
+                Reports
+              </span>
+            </button>
+          )}
 
           {/* 6. Settings */}
-          <button
-            type="button"
-            onClick={() => onNavigate('settings')}
-            className="p-3 sm:p-4 rounded-2xl bg-white hover:bg-slate-100/70 border border-slate-200 hover:border-slate-400 shadow-xs hover:shadow-sm transition flex flex-col items-center justify-center text-center gap-2 group cursor-pointer active:scale-95"
-          >
-            <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-slate-100 text-slate-700 flex items-center justify-center group-hover:scale-110 group-hover:bg-slate-700 group-hover:text-white transition-all shadow-xs">
-              <Settings className="w-5 h-5" />
-            </div>
-            <span className="text-xs sm:text-sm font-bold text-slate-800 group-hover:text-slate-900 transition">
-              Settings
-            </span>
-          </button>
+          {canViewSettings && (
+            <button
+              type="button"
+              id="menu-btn-settings"
+              onClick={() => onNavigate('settings')}
+              className="p-3 sm:p-4 rounded-2xl bg-white border border-slate-200/90 shadow-xs hover:border-slate-400 hover:shadow-md transition text-center flex flex-col items-center justify-center gap-2 group active:scale-95 cursor-pointer"
+            >
+              <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-xl bg-slate-100 text-slate-700 group-hover:bg-slate-800 group-hover:text-white transition flex items-center justify-center">
+                <Settings className="w-5 h-5 sm:w-6 sm:h-6" />
+              </div>
+              <span className="text-xs sm:text-sm font-semibold text-slate-800 group-hover:text-slate-900 transition">
+                Settings
+              </span>
+            </button>
+          )}
 
           {/* 7. Customers */}
-          <button
-            type="button"
-            onClick={() => onNavigate('customers')}
-            className="p-3 sm:p-4 rounded-2xl bg-white hover:bg-purple-50/50 border border-slate-200 hover:border-purple-300 shadow-xs hover:shadow-sm transition flex flex-col items-center justify-center text-center gap-2 group cursor-pointer active:scale-95"
-          >
-            <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center group-hover:scale-110 group-hover:bg-purple-600 group-hover:text-white transition-all shadow-xs">
-              <Users className="w-5 h-5" />
-            </div>
-            <span className="text-xs sm:text-sm font-bold text-slate-800 group-hover:text-purple-600 transition">
-              Customers
-            </span>
-          </button>
+          {(canViewCustomers || canViewCredit) && (
+            <button
+              type="button"
+              id="menu-btn-customers"
+              onClick={() => onNavigate('customers')}
+              className="p-3 sm:p-4 rounded-2xl bg-white border border-slate-200/90 shadow-xs hover:border-purple-400 hover:shadow-md transition text-center flex flex-col items-center justify-center gap-2 group active:scale-95 cursor-pointer"
+            >
+              <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-xl bg-purple-50 text-purple-600 group-hover:bg-purple-600 group-hover:text-white transition flex items-center justify-center">
+                <Users className="w-5 h-5 sm:w-6 sm:h-6" />
+              </div>
+              <span className="text-xs sm:text-sm font-semibold text-slate-800 group-hover:text-purple-700 transition">
+                Customers
+              </span>
+            </button>
+          )}
 
           {/* 8. Suppliers */}
-          <button
-            type="button"
-            onClick={() => onNavigate('suppliers')}
-            className="p-3 sm:p-4 rounded-2xl bg-white hover:bg-cyan-50/50 border border-slate-200 hover:border-cyan-300 shadow-xs hover:shadow-sm transition flex flex-col items-center justify-center text-center gap-2 group cursor-pointer active:scale-95"
-          >
-            <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-cyan-50 text-cyan-600 flex items-center justify-center group-hover:scale-110 group-hover:bg-cyan-600 group-hover:text-white transition-all shadow-xs">
-              <Truck className="w-5 h-5" />
-            </div>
-            <span className="text-xs sm:text-sm font-bold text-slate-800 group-hover:text-cyan-600 transition">
-              Suppliers
-            </span>
-          </button>
+          {(isStoreOwner || hasPermission('products.create') || hasPermission('products.edit')) && (
+            <button
+              type="button"
+              id="menu-btn-suppliers"
+              onClick={() => onNavigate('suppliers')}
+              className="p-3 sm:p-4 rounded-2xl bg-white border border-slate-200/90 shadow-xs hover:border-orange-400 hover:shadow-md transition text-center flex flex-col items-center justify-center gap-2 group active:scale-95 cursor-pointer"
+            >
+              <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-xl bg-orange-50 text-orange-600 group-hover:bg-orange-600 group-hover:text-white transition flex items-center justify-center">
+                <Truck className="w-5 h-5 sm:w-6 sm:h-6" />
+              </div>
+              <span className="text-xs sm:text-sm font-semibold text-slate-800 group-hover:text-orange-700 transition">
+                Suppliers
+              </span>
+            </button>
+          )}
 
           {/* 9. Staff */}
-          <button
-            type="button"
-            onClick={() => onNavigate('staff')}
-            className="p-3 sm:p-4 rounded-2xl bg-white hover:bg-rose-50/50 border border-slate-200 hover:border-rose-300 shadow-xs hover:shadow-sm transition flex flex-col items-center justify-center text-center gap-2 group cursor-pointer active:scale-95"
-          >
-            <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center group-hover:scale-110 group-hover:bg-rose-600 group-hover:text-white transition-all shadow-xs">
-              <ShieldCheck className="w-5 h-5" />
-            </div>
-            <span className="text-xs sm:text-sm font-bold text-slate-800 group-hover:text-rose-600 transition">
-              Staff
-            </span>
-          </button>
+          {canViewStaff && (
+            <button
+              type="button"
+              id="menu-btn-staff"
+              onClick={() => onNavigate('staff')}
+              className="p-3 sm:p-4 rounded-2xl bg-white border border-slate-200/90 shadow-xs hover:border-rose-400 hover:shadow-md transition text-center flex flex-col items-center justify-center gap-2 group active:scale-95 cursor-pointer"
+            >
+              <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-xl bg-rose-50 text-rose-600 group-hover:bg-rose-600 group-hover:text-white transition flex items-center justify-center">
+                <ShieldCheck className="w-5 h-5 sm:w-6 sm:h-6" />
+              </div>
+              <span className="text-xs sm:text-sm font-semibold text-slate-800 group-hover:text-rose-700 transition">
+                Staff
+              </span>
+            </button>
+          )}
         </div>
 
-        {/* Wide Button for "Subscription" */}
-        <div className="pt-1">
+        {/* Finish this section with wide buttons for "Subscription" */}
+        <div className="pt-1 sm:pt-2">
           <button
             type="button"
-            id="btn-mainmenu-subscription"
+            id="btn-menu-subscription"
             onClick={() => setSubscriptionModalOpen(true)}
-            className="w-full p-4 sm:p-5 rounded-2xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-white shadow-xs transition flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-left cursor-pointer group"
+            className="w-full p-4 rounded-2xl bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white shadow-md hover:shadow-lg border border-slate-800 hover:border-indigo-500/50 transition flex items-center justify-between group text-left cursor-pointer active:scale-[0.99]"
           >
             <div className="flex items-center gap-3.5">
-              <div className="w-10 h-10 rounded-xl bg-amber-400/20 text-amber-400 border border-amber-400/30 flex items-center justify-center shrink-0 group-hover:scale-110 transition-transform">
-                <Crown className="w-5 h-5" />
+              <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-amber-400 to-orange-500 text-slate-950 flex items-center justify-center shrink-0 shadow-md">
+                <Crown className="w-6 h-6 fill-current" />
               </div>
               <div>
                 <div className="flex items-center gap-2">
-                  <span className="font-bold text-sm sm:text-base text-white">Subscription</span>
-                  <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 text-[10px] font-bold uppercase tracking-wider">
-                    Active Pro Plan
+                  <span className="text-sm sm:text-base font-bold text-white tracking-tight">Subscription</span>
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                    Active Pro
                   </span>
                 </div>
-                <p className="text-xs text-slate-300 mt-0.5">
-                  Multi-register terminal sync, unlimited inventory, cloud database backup &amp; reports
+                <p className="text-xs text-slate-300 mt-0.5 line-clamp-1">
+                  StockWise Pro Business • Unlimited Products, Multi-Terminal POS & Sync
                 </p>
               </div>
             </div>
 
-            <div className="flex items-center gap-1.5 text-xs font-bold text-blue-400 group-hover:text-blue-300 transition shrink-0">
-              <span>Manage Plan</span>
-              <ChevronRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />
+            <div className="flex items-center gap-2 text-indigo-300 group-hover:text-white transition pl-2">
+              <span className="text-xs font-semibold hidden sm:inline">Manage Plan</span>
+              <ChevronRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
             </div>
           </button>
         </div>
       </div>
 
       {/* ======================================================== */}
-      {/* 5. GOAL-GRADIENT STORE SETUP PROGRESS                    */}
+      {/* 5. RECENT COMPLETED SALES TABLE                          */}
       {/* ======================================================== */}
-      <StoreSetupProgress onNavigate={onNavigate} />
-
-      {/* ======================================================== */}
-      {/* 6. ACTIONABLE BUSINESS INSIGHTS                          */}
-      {/* ======================================================== */}
-      <ActionableInsights onNavigate={onNavigate} />
-
-      {/* ======================================================== */}
-      {/* 7. TODAY'S BUSINESS PROGRESS & SALES TARGET              */}
-      {/* ======================================================== */}
-      {canViewRevenue && (
-        <div className="bg-white p-5 sm:p-6 rounded-2xl sm:rounded-3xl border border-slate-200 shadow-xs space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+      <div className="pt-2">
+        {/* Recent Transactions Table */}
+        <div className="bg-white rounded-2xl border border-slate-200/90 shadow-xs overflow-hidden">
+          <div className="p-4 sm:p-5 border-b border-slate-100 flex items-center justify-between">
             <div>
-              <div className="flex items-center gap-2">
-                <h2 className="text-base sm:text-lg font-bold text-slate-900 tracking-tight">Today&apos;s Performance</h2>
-                <span className="text-xs text-slate-400 font-medium">Real-time daily progress</span>
-              </div>
-              <p className="text-xs text-slate-500 mt-0.5">
-                Understand how your business is doing right now relative to yesterday and your targets.
-              </p>
-            </div>
-
-            {/* Target Settings Shortcut */}
-            {isStoreOwner && (
-              <button
-                type="button"
-                onClick={() => {
-                  setTargetInput(settings?.daily_sales_target ? String(settings.daily_sales_target) : '');
-                  setTargetModalOpen(true);
-                }}
-                className="self-start sm:self-auto inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold transition cursor-pointer"
-              >
-                <Target className="w-3.5 h-3.5 text-slate-600" />
-                <span>{configuredTarget ? 'Edit Sales Target' : '+ Set Daily Target'}</span>
-              </button>
-            )}
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
-            {/* Today's Sales with Yesterday Contrast (Principle 7) */}
-            <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80 flex flex-col justify-between">
-              <div>
-                <span className="text-xs font-semibold text-slate-600">Today&apos;s Sales</span>
-                <div className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight font-mono tabular-nums mt-1">
-                  {formatCurrency(todaySalesAmount, currency)}
-                </div>
-              </div>
-              <div className="mt-3 pt-3 border-t border-slate-200/80 text-xs">
-                <div className="text-slate-500">
-                  Compared with: <span className="font-semibold text-slate-800 font-mono">{formatCurrency(yesterdaySalesAmount, currency)} yesterday</span>
-                </div>
-                <div className="mt-1 font-semibold flex items-center gap-1">
-                  {salesDiff > 0 ? (
-                    <span className="text-emerald-700 font-mono">
-                      +{formatCurrency(salesDiff, currency)} ({salesDiffPercent ? `+${salesDiffPercent}%` : 'Higher'})
-                    </span>
-                  ) : salesDiff < 0 ? (
-                    <span className="text-amber-800 font-mono">
-                      -{formatCurrency(Math.abs(salesDiff), currency)} ({salesDiffPercent ? `${salesDiffPercent}%` : 'Lower'})
-                    </span>
-                  ) : (
-                    <span className="text-slate-600">Matching yesterday&apos;s pace</span>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {/* Sales Target Progress Bar (Principle 3: Goal-Gradient) */}
-            <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80 flex flex-col justify-between">
-              <div>
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-semibold text-slate-600">Daily Sales Target</span>
-                  {configuredTarget && (
-                    <span className="text-xs font-bold text-blue-700 font-mono">
-                      {targetProgressPercent}%
-                    </span>
-                  )}
-                </div>
-                {configuredTarget ? (
-                  <div className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight font-mono tabular-nums mt-1">
-                    {formatCurrency(todaySalesAmount, currency)} <span className="text-sm font-normal text-slate-500">/ {formatCurrency(configuredTarget, currency)}</span>
-                  </div>
-                ) : (
-                  <div className="mt-1">
-                    <div className="text-sm font-semibold text-slate-700">No Target Configured</div>
-                    <p className="text-xs text-slate-500 mt-0.5">
-                      Setting an optional daily goal motivates team productivity.
-                    </p>
-                  </div>
-                )}
-              </div>
-
-              <div className="mt-3 pt-3 border-t border-slate-200/80">
-                {configuredTarget ? (
-                  <div className="space-y-1.5">
-                    <div className="w-full h-2.5 bg-slate-200 rounded-full overflow-hidden">
-                      <div 
-                        className={`h-full rounded-full transition-all duration-500 ${
-                          (targetProgressPercent || 0) >= 100 ? 'bg-emerald-600' : 'bg-blue-600'
-                        }`}
-                        style={{ width: `${targetProgressPercent || 0}%` }}
-                      />
-                    </div>
-                    <div className="text-[11px] text-slate-500 flex justify-between">
-                      <span>{todaySalesCount} orders recorded</span>
-                      <span>
-                        {(targetProgressPercent || 0) >= 100 
-                          ? '🎉 Target reached!' 
-                          : `${formatCurrency(Math.max(0, configuredTarget - todaySalesAmount), currency)} remaining`
-                        }
-                      </span>
-                    </div>
-                  </div>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setTargetInput('');
-                      setTargetModalOpen(true);
-                    }}
-                    className="text-xs font-bold text-blue-600 hover:text-blue-700 flex items-center gap-1 cursor-pointer"
-                  >
-                    <span>Set a target for today</span>
-                    <ArrowRight className="w-3.5 h-3.5" />
-                  </button>
-                )}
-              </div>
-            </div>
-
-            {/* Estimated Net Profit in Range */}
-            <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80 flex flex-col justify-between">
-              <div>
-                <span className="text-xs font-semibold text-slate-600">Estimated Profit (This Month)</span>
-                <div className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight font-mono tabular-nums mt-1">
-                  {canViewProfit ? (
-                    formatCurrency(estimatedProfit, currency)
-                  ) : (
-                    <span className="text-slate-400 font-mono text-base">Restricted</span>
-                  )}
-                </div>
-              </div>
-              <div className="mt-3 pt-3 border-t border-slate-200/80 text-[11px] text-slate-500">
-                <span>Revenue minus product cost &amp; expenses</span>
-                <div className="mt-1 flex items-center justify-between text-slate-700 font-medium font-mono">
-                  <span>COGS: {formatCurrency(totalCogs, currency)}</span>
-                  <span>Exp: {formatCurrency(totalExpensesAmount, currency)}</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ======================================================== */}
-      {/* 8. CUSTOMER CREDIT & DEBT SUMMARY                        */}
-      {/* ======================================================== */}
-      {canViewCredit && (
-        <div className="pt-2 space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pt-4 border-t border-slate-200">
-            <div>
-              <div className="flex items-center gap-2">
-                <h3 className="text-base font-bold text-slate-900">Customer Credit &amp; Debt Overview</h3>
-                <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-amber-100 text-amber-900 border border-amber-200">
-                  Accounts Receivable
-                </span>
-              </div>
-              <p className="text-xs text-slate-500">Live credit sales balance, customer debt recovery, and payment audit</p>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => onNavigate('customers')}
-              className="text-xs font-bold text-blue-600 hover:text-blue-700 flex items-center gap-1 self-start sm:self-auto cursor-pointer"
-            >
-              <span>View Customer Directory</span>
-              <ArrowRight className="w-3.5 h-3.5" />
-            </button>
-          </div>
-
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-            <div 
-              onClick={() => onNavigate('customers')}
-              className="p-4 rounded-2xl bg-amber-50/60 border border-amber-200 shadow-xs hover:border-amber-400 transition cursor-pointer"
-            >
-              <div className="flex items-center justify-between text-amber-900 text-xs font-semibold">
-                <span>Outstanding Debt</span>
-                <Clock className="w-4 h-4 text-amber-700" />
-              </div>
-              <div className="text-xl sm:text-2xl font-black text-amber-950 mt-2 font-mono tabular-nums">
-                {formatCurrency(creditOverview.totalOutstandingCredit, currency)}
-              </div>
-              <div className="text-[11px] text-amber-800 font-medium mt-0.5">
-                {creditOverview.debtorsCount} active debtor{creditOverview.debtorsCount === 1 ? '' : 's'}
-              </div>
-            </div>
-
-            <div 
-              onClick={() => onNavigate('customers')}
-              className="p-4 rounded-2xl bg-white border border-slate-200 shadow-xs hover:border-blue-400 transition cursor-pointer"
-            >
-              <div className="flex items-center justify-between text-slate-600 text-xs font-semibold">
-                <span>Debtors Count</span>
-                <Users className="w-4 h-4 text-blue-600" />
-              </div>
-              <div className="text-xl sm:text-2xl font-black text-slate-900 mt-2 font-mono tabular-nums">
-                {creditOverview.debtorsCount}
-              </div>
-              <div className="text-[11px] text-slate-500 font-medium mt-0.5">
-                {creditOverview.debtorsCount === 0 ? 'All accounts clear' : 'Unpaid balances'}
-              </div>
-            </div>
-
-            <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-xs">
-              <div className="flex items-center justify-between text-slate-600 text-xs font-semibold">
-                <span>Total Credit Issued</span>
-                <TrendingUp className="w-4 h-4 text-indigo-600" />
-              </div>
-              <div className="text-xl sm:text-2xl font-black text-slate-900 mt-2 font-mono tabular-nums">
-                {formatCurrency(creditOverview.totalCreditIssued, currency)}
-              </div>
-              <div className="text-[11px] text-slate-500 font-medium mt-0.5">
-                All-time credit orders
-              </div>
-            </div>
-
-            <div className="p-4 rounded-2xl bg-emerald-50/50 border border-emerald-200 shadow-xs">
-              <div className="flex items-center justify-between text-emerald-800 text-xs font-semibold">
-                <span>Total Repayments</span>
-                <CheckCircle2 className="w-4 h-4 text-emerald-700" />
-              </div>
-              <div className="text-xl sm:text-2xl font-black text-emerald-900 mt-2 font-mono tabular-nums">
-                {formatCurrency(creditOverview.totalRepaymentsReceived, currency)}
-              </div>
-              <div className="text-[11px] text-emerald-700 font-medium mt-0.5">
-                Recovered funds
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ======================================================== */}
-      {/* 9. RECENT SALES ACTIVITY FEED                            */}
-      {/* ======================================================== */}
-      {canViewSales && (
-        <div className="bg-white p-5 sm:p-6 rounded-2xl sm:rounded-3xl border border-slate-200 shadow-xs space-y-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <h3 className="text-base font-bold text-slate-900 tracking-tight">Recent Sales Activity</h3>
-              <p className="text-xs text-slate-500">Live transaction stream across all store registers</p>
+              <h4 className="text-sm sm:text-base font-bold text-slate-900">Recent Completed Sales</h4>
+              <p className="text-xs text-slate-500">Live database transactions</p>
             </div>
             <button
               type="button"
               onClick={() => onNavigate('transactions')}
-              className="text-xs font-bold text-blue-600 hover:text-blue-700 flex items-center gap-1 cursor-pointer"
+              className="text-xs font-semibold text-blue-600 hover:text-blue-700 flex items-center gap-1"
             >
-              <span>View All ({sales.length})</span>
+              <span>View All</span>
               <ArrowRight className="w-3.5 h-3.5" />
             </button>
           </div>
 
-          {sales.length === 0 ? (
-            <div className="py-10 text-center space-y-3">
-              <div className="w-12 h-12 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center mx-auto">
-                <Receipt className="w-6 h-6" />
-              </div>
-              <div className="text-sm font-bold text-slate-800">No Sales Recorded Yet</div>
-              <p className="text-xs text-slate-500 max-w-sm mx-auto">
-                Ring up your first retail order in the POS to begin generating live business insights and revenue records.
-              </p>
-              <button
-                type="button"
-                onClick={() => onNavigate('pos')}
-                className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold shadow-xs transition cursor-pointer"
-              >
-                Open POS Register
-              </button>
-            </div>
-          ) : (
-            <div className="divide-y divide-slate-100">
-              {sales.slice(0, 5).map((s) => (
-                <div 
-                  key={s.id}
-                  onClick={() => onViewSaleDetail ? onViewSaleDetail(s) : onNavigate('transactions')}
-                  className="py-3 flex items-center justify-between gap-3 hover:bg-slate-50/70 rounded-xl px-2 transition cursor-pointer group"
-                >
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div className="w-9 h-9 rounded-xl bg-slate-100 text-slate-700 group-hover:bg-blue-50 group-hover:text-blue-600 transition flex items-center justify-center shrink-0">
-                      <Receipt className="w-4 h-4" />
-                    </div>
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs sm:text-sm font-bold text-slate-900 truncate">
-                          {s.customer_name || 'Walk-in Customer'}
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm text-slate-600">
+              <thead className="bg-slate-50/80 text-[11px] uppercase text-slate-500 font-semibold border-b border-slate-100">
+                <tr>
+                  <th className="px-5 py-3">Receipt / ID</th>
+                  <th className="px-5 py-3">Customer</th>
+                  <th className="px-5 py-3">Payment</th>
+                  <th className="px-5 py-3">Date & Time</th>
+                  <th className="px-5 py-3 text-right">Total</th>
+                  <th className="px-5 py-3 text-center">Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 text-xs">
+                {sales.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="px-5 py-8 text-center text-slate-400">
+                      No sales recorded yet. Click &quot;POS Sale&quot; to make your first transaction!
+                    </td>
+                  </tr>
+                ) : (
+                  sales.slice(0, 5).map((sale) => (
+                    <tr key={sale.id} className="hover:bg-slate-50/70 transition">
+                      <td className="px-5 py-3.5 font-medium text-slate-900 font-mono">
+                        #{sale.id.slice(0, 8)}
+                      </td>
+                      <td className="px-5 py-3.5 text-slate-800">
+                        {sale.customer_name || <span className="text-slate-400">Walk-in Customer</span>}
+                      </td>
+                      <td className="px-5 py-3.5 capitalize">
+                        <span className="px-2 py-0.5 rounded-full font-medium bg-slate-100 text-slate-700">
+                          {sale.payment_method.replace('_', ' ')}
                         </span>
-                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
-                          s.payment_method === 'credit'
-                            ? 'bg-amber-100 text-amber-900 border border-amber-200'
-                            : 'bg-slate-100 text-slate-700'
-                        }`}>
-                          {s.payment_method.replace('_', ' ')}
-                        </span>
-                      </div>
-                      <div className="text-[11px] text-slate-400 mt-0.5">
-                        {formatDate(s.created_at)} · #{s.id.slice(0, 8)}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="text-right shrink-0">
-                    <div className="text-xs sm:text-sm font-extrabold font-mono tabular-nums text-slate-900 group-hover:text-blue-600 transition">
-                      {formatCurrency(s.total_amount, currency)}
-                    </div>
-                    <span className="text-[10px] text-emerald-700 font-semibold">
-                      ✓ Completed
-                    </span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* ======================================================== */}
-      {/* 10. SUBSCRIPTION MODAL                                   */}
-      {/* ======================================================== */}
-      {subscriptionModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xs">
-          <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 max-w-md w-full p-6 text-slate-800 animate-in zoom-in-95 duration-150">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-              <div className="flex items-center gap-2.5">
-                <div className="w-10 h-10 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center">
-                  <Crown className="w-5 h-5 text-amber-600" />
-                </div>
-                <div>
-                  <h3 className="font-bold text-base text-slate-900">StockWise Subscription</h3>
-                  <p className="text-xs text-slate-500">Manage plan tier &amp; business features</p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setSubscriptionModalOpen(false)}
-                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="py-4 space-y-4 text-xs">
-              <div className="p-4 rounded-2xl bg-gradient-to-tr from-slate-900 to-indigo-950 text-white space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-[11px] font-bold uppercase tracking-wider text-amber-400">Current Plan</span>
-                  <span className="px-2 py-0.5 rounded-full bg-emerald-500 text-white font-bold text-[10px] tracking-wide uppercase">
-                    Active
-                  </span>
-                </div>
-                <div className="text-xl font-extrabold text-white">StockWise Pro Edition</div>
-                <p className="text-xs text-slate-300">
-                  Full multi-branch store license unlocked with real-time cloud sync.
-                </p>
-              </div>
-
-              <div className="space-y-2">
-                <div className="text-xs font-bold text-slate-800 uppercase tracking-wider">Included In Your Plan:</div>
-                <ul className="space-y-1.5 text-slate-600">
-                  <li className="flex items-center gap-2">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                    <span>Unlimited POS terminal sales and receipts</span>
-                  </li>
-                  <li className="flex items-center gap-2">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                    <span>Multi-store branches &amp; warehouse locations</span>
-                  </li>
-                  <li className="flex items-center gap-2">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                    <span>Customer credit ledger, debt tracking &amp; repayments</span>
-                  </li>
-                  <li className="flex items-center gap-2">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                    <span>Real-time low stock alerts &amp; audit history</span>
-                  </li>
-                  <li className="flex items-center gap-2">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                    <span>Role-based staff invitations &amp; granular permissions</span>
-                  </li>
-                </ul>
-              </div>
-
-              <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-600 text-[11px]">
-                Active License ID: <strong className="font-mono text-slate-800">SW-PRO-{currentStore?.id?.slice(0, 8).toUpperCase() || 'ENTERPRISE'}</strong>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
-              <button
-                type="button"
-                onClick={() => setSubscriptionModalOpen(false)}
-                className="w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-xl transition cursor-pointer"
-              >
-                Close Plan Details
-              </button>
-            </div>
+                      </td>
+                      <td className="px-5 py-3.5 text-slate-500">
+                        {formatDate(sale.created_at)}
+                      </td>
+                      <td className="px-5 py-3.5 text-right font-semibold text-slate-900">
+                        {formatCurrency(sale.total_amount, currency)}
+                      </td>
+                      <td className="px-5 py-3.5 text-center">
+                        <button
+                          type="button"
+                          onClick={() => onViewSaleDetail ? onViewSaleDetail(sale) : onNavigate('transactions')}
+                          className="text-xs text-blue-600 hover:text-blue-800 font-semibold px-2 py-1 rounded hover:bg-blue-50 transition"
+                        >
+                          Receipt
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
           </div>
         </div>
-      )}
+      </div>
 
       {/* ======================================================== */}
-      {/* 11. SALES TARGET MODAL                                   */}
+      {/* 6. SUBSCRIPTION MODAL DIALOG                             */}
       {/* ======================================================== */}
-      {targetModalOpen && (
+      {subscriptionModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs">
-          <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 max-w-sm w-full p-6 animate-in zoom-in-95 duration-100">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-              <div className="flex items-center gap-2">
-                <Target className="w-5 h-5 text-blue-600" />
-                <h3 className="font-bold text-slate-900 text-base">Configure Daily Sales Target</h3>
+          <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 max-w-lg w-full overflow-hidden animate-in zoom-in-95 duration-150">
+            {/* Modal Header */}
+            <div className="p-5 sm:p-6 bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 text-white flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-400 to-orange-500 text-slate-950 flex items-center justify-center shadow-md">
+                  <Crown className="w-6 h-6 fill-current" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold">StockWise Subscription</h3>
+                  <p className="text-xs text-indigo-200">Active Business Plan & Features</p>
+                </div>
               </div>
               <button
                 type="button"
-                onClick={() => setTargetModalOpen(false)}
-                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg cursor-pointer"
+                onClick={() => setSubscriptionModalOpen(false)}
+                className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-white/10 transition"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <form onSubmit={handleSaveTarget} className="mt-4 space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Target Daily Revenue ({currency})
-                </label>
-                <div className="relative">
-                  <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm font-bold text-slate-400 font-mono">
-                    {currency === 'NGN' ? '₦' : currency === 'USD' ? '$' : currency}
-                  </span>
-                  <input
-                    type="number"
-                    step="any"
-                    min="0"
-                    placeholder="e.g. 250000"
-                    value={targetInput}
-                    onChange={(e) => setTargetInput(e.target.value)}
-                    className="w-full pl-9 pr-3.5 py-2.5 text-base font-bold font-mono tabular-nums bg-slate-50 border border-slate-300 rounded-xl focus:outline-none focus:border-blue-500 focus:bg-white text-slate-900"
-                  />
+            {/* Modal Body */}
+            <div className="p-5 sm:p-6 space-y-4">
+              {subscriptionFeedback && (
+                <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span>{subscriptionFeedback}</span>
                 </div>
-                <p className="text-[11px] text-slate-500 mt-1">
-                  Leave blank or set to 0 to disable daily target tracking.
-                </p>
+              )}
+
+              {/* Current Active Plan Status */}
+              <div className="p-4 rounded-2xl bg-indigo-50/70 border border-indigo-200/80 flex items-center justify-between">
+                <div>
+                  <span className="text-[11px] font-bold text-indigo-700 uppercase tracking-wider">Current Plan</span>
+                  <div className="text-base font-bold text-slate-900 mt-0.5">StockWise Pro Business</div>
+                  <div className="text-xs text-slate-500 mt-0.5">Renews automatically • Unlimited stores & staff</div>
+                </div>
+                <span className="px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider bg-emerald-500 text-white shadow-xs">
+                  Active
+                </span>
               </div>
 
-              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
-                <button
-                  type="button"
-                  onClick={() => setTargetModalOpen(false)}
-                  className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl transition cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={savingTarget}
-                  className="px-5 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-500 rounded-xl transition shadow-xs cursor-pointer disabled:opacity-50"
-                >
-                  {savingTarget ? 'Saving...' : 'Save Target'}
-                </button>
+              {/* Plan Options Selector */}
+              <div className="space-y-3">
+                <div className="text-xs font-bold uppercase tracking-wider text-slate-500">
+                  Select Subscription Tier
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div 
+                    onClick={() => setSubscriptionPlan('pro')}
+                    className={`p-3.5 rounded-2xl border-2 cursor-pointer transition flex flex-col justify-between ${
+                      subscriptionPlan === 'pro'
+                        ? 'border-blue-600 bg-blue-50/40 shadow-xs'
+                        : 'border-slate-200 hover:border-slate-300'
+                    }`}
+                  >
+                    <div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm font-bold text-slate-900">Pro Tier</span>
+                        {subscriptionPlan === 'pro' && <CheckCircle2 className="w-4 h-4 text-blue-600" />}
+                      </div>
+                      <div className="text-xl font-black text-slate-900 mt-1">$29<span className="text-xs font-normal text-slate-500">/mo</span></div>
+                      <p className="text-[11px] text-slate-500 mt-1">For single & dual retail shops</p>
+                    </div>
+                  </div>
+
+                  <div 
+                    onClick={() => setSubscriptionPlan('enterprise')}
+                    className={`p-3.5 rounded-2xl border-2 cursor-pointer transition flex flex-col justify-between ${
+                      subscriptionPlan === 'enterprise'
+                        ? 'border-indigo-600 bg-indigo-50/40 shadow-xs'
+                        : 'border-slate-200 hover:border-slate-300'
+                    }`}
+                  >
+                    <div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm font-bold text-slate-900">Enterprise</span>
+                        {subscriptionPlan === 'enterprise' && <CheckCircle2 className="w-4 h-4 text-indigo-600" />}
+                      </div>
+                      <div className="text-xl font-black text-slate-900 mt-1">$79<span className="text-xs font-normal text-slate-500">/mo</span></div>
+                      <p className="text-[11px] text-slate-500 mt-1">Multi-store chain & API sync</p>
+                    </div>
+                  </div>
+                </div>
               </div>
-            </form>
+
+              {/* Included Features Checklist */}
+              <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-2 text-xs text-slate-700">
+                <div className="font-semibold text-slate-900 mb-1">Included with your subscription:</div>
+                <div className="flex items-center gap-2">
+                  <Check className="w-4 h-4 text-emerald-600" />
+                  <span>Cloud PostgreSQL Database & Real-Time Cross Device Sync</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Check className="w-4 h-4 text-emerald-600" />
+                  <span>Unlimited POS Sales, Items, & Thermal Receipt Generation</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Check className="w-4 h-4 text-emerald-600" />
+                  <span>Multi-User Staff Permissions (Owner, Manager, Cashier)</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Check className="w-4 h-4 text-emerald-600" />
+                  <span>Low Stock & Out of Stock Automatic Alerts</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-4 sm:p-5 bg-slate-50 border-t border-slate-100 flex items-center justify-between gap-3">
+              <button
+                type="button"
+                onClick={() => setSubscriptionModalOpen(false)}
+                className="px-4 py-2.5 rounded-xl border border-slate-200 text-slate-700 hover:bg-slate-100 font-semibold text-xs transition"
+              >
+                Close
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setSubscriptionFeedback(`Your ${subscriptionPlan === 'enterprise' ? 'Enterprise' : 'Pro'} Plan subscription is active and verified!`);
+                  setTimeout(() => setSubscriptionFeedback(null), 3500);
+                }}
+                className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs shadow-md transition"
+              >
+                Save Subscription
+              </button>
+            </div>
           </div>
         </div>
       )}

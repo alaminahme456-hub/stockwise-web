@@ -47,12 +47,14 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
     }
   };
 
-  const allMobileTabs: Array<{
+  interface NavTabItem {
     id: NavigationTab;
     label: string;
     icon: React.ComponentType<{ className?: string }>;
     badge?: number;
-  }> = [
+  }
+
+  const allMobileTabs: NavTabItem[] = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'pos', label: 'POS', icon: ShoppingCart },
     { id: 'products', label: 'Products', icon: Package },

@@ -71,13 +71,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
     }
   };
 
-  const allNavItems: Array<{
+  interface SidebarNavItem {
     id: NavigationTab;
     label: string;
     icon: React.ComponentType<{ className?: string }>;
     badge?: number | string;
     badgeColor?: string;
-  }> = [
+  }
+
+  const allNavItems: SidebarNavItem[] = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'products', label: 'Products', icon: Package },
     { 

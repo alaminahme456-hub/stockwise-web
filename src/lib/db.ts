@@ -1505,16 +1505,21 @@ export async function createStaffInvitation(params: {
   invitedBy: string;
   invitedByName: string;
   name: string;
-  email: string;
+  email?: string;
   phone?: string;
   role: string;
   permissions: string[];
   notes?: string;
+  deliveryMethod?: 'whatsapp' | 'email' | 'copy_link';
 }): Promise<{ member: StoreMember; invitation: StaffInvitation }> {
   const token = generateInvitationToken();
   const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(); // 7 days expiration
   const invitationId = `inv-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
   const memberId = `mem-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+
+  const deliveryMethod = params.deliveryMethod || (params.phone ? 'whatsapp' : 'email');
+  const cleanEmail = params.email?.trim().toLowerCase() || '';
+  const cleanPhone = params.phone?.trim() || null;
 
   const invitation: StaffInvitation = {
     id: invitationId,
@@ -1522,15 +1527,17 @@ export async function createStaffInvitation(params: {
     store_name: params.storeName,
     invited_by: params.invitedBy,
     invited_by_name: params.invitedByName,
+    staff_id: memberId,
     name: params.name.trim(),
-    email: params.email.trim().toLowerCase(),
-    phone: params.phone?.trim() || null,
+    email: cleanEmail,
+    phone: cleanPhone,
     role: params.role,
     permissions: params.permissions,
     token,
     status: 'pending',
     expires_at: expiresAt,
     created_at: new Date().toISOString(),
+    delivery_method: deliveryMethod,
   };
 
   const member: StoreMember = {
@@ -1538,8 +1545,8 @@ export async function createStaffInvitation(params: {
     store_id: params.storeId,
     user_id: `pending-${invitationId}`,
     user_name: params.name.trim(),
-    user_email: params.email.trim().toLowerCase(),
-    phone: params.phone?.trim() || null,
+    user_email: cleanEmail,
+    phone: cleanPhone,
     role: params.role,
     status: 'pending',
     permissions: params.permissions,
@@ -1582,12 +1589,18 @@ export async function createStaffInvitation(params: {
   saveGlobalInvitations(globalInvs);
 
   // 4. Log staff activity
+  const methodDesc = deliveryMethod === 'whatsapp'
+    ? `via WhatsApp (${cleanPhone || 'phone'})`
+    : deliveryMethod === 'copy_link'
+    ? `via invitation link`
+    : `via email (${cleanEmail || 'email'})`;
+
   await logStaffActivity(
     params.storeId,
     `Invited ${params.name} as ${formatRoleName(params.role)}`,
     params.invitedByName,
     undefined,
-    `Invitation sent to ${params.email} with ${params.permissions.length} granular permissions`
+    `Invitation prepared ${methodDesc} with ${params.permissions.length} granular permissions`
   );
 
   return { member, invitation };
@@ -1596,7 +1609,12 @@ export async function createStaffInvitation(params: {
 export async function resendStaffInvitation(
   storeId: string,
   invitationId: string,
-  performerName: string
+  performerName: string,
+  options?: {
+    deliveryMethod?: 'whatsapp' | 'email' | 'copy_link';
+    email?: string;
+    phone?: string;
+  }
 ): Promise<StaffInvitation> {
   const { userId, storage } = findStorageForStore(storeId);
   const invs = storage.staffInvitations || [];
@@ -1607,11 +1625,21 @@ export async function resendStaffInvitation(
   if (idx !== -1) {
     invs[idx].expires_at = expiresAt;
     invs[idx].status = 'pending';
+    if (options?.deliveryMethod) {
+      invs[idx].delivery_method = options.deliveryMethod;
+    }
+    if (options?.email !== undefined) {
+      invs[idx].email = options.email.trim().toLowerCase();
+    }
+    if (options?.phone !== undefined) {
+      invs[idx].phone = options.phone.trim() || null;
+    }
+
     saveUserStorage(userId, storage);
 
     // Update global registry
     const globalInvs = getGlobalInvitations().map((i) =>
-      i.id === invitationId ? { ...i, expires_at: expiresAt, status: 'pending' as const } : i
+      i.id === invitationId ? { ...invs[idx] } : i
     );
     saveGlobalInvitations(globalInvs);
 
@@ -1620,12 +1648,24 @@ export async function resendStaffInvitation(
     if (memIdx !== -1) {
       storage.storeMembers[memIdx].invitation_expires_at = expiresAt;
       storage.storeMembers[memIdx].status = 'pending';
+      if (options?.email !== undefined) {
+        storage.storeMembers[memIdx].user_email = options.email.trim().toLowerCase();
+      }
+      if (options?.phone !== undefined) {
+        storage.storeMembers[memIdx].phone = options.phone.trim() || null;
+      }
       saveUserStorage(userId, storage);
     }
 
+    const targetDesc = invs[idx].delivery_method === 'whatsapp' 
+      ? `via WhatsApp (${invs[idx].phone || 'phone'})`
+      : invs[idx].delivery_method === 'copy_link'
+      ? `via invitation link`
+      : `via email (${invs[idx].email || 'email'})`;
+
     await logStaffActivity(
       storeId,
-      `Resent invitation to ${invs[idx].name} (${invs[idx].email})`,
+      `Resent invitation to ${invs[idx].name} ${targetDesc}`,
       performerName
     );
 
@@ -1648,7 +1688,7 @@ export async function cancelStaffInvitation(
     inv.status = 'cancelled';
     storage.staffInvitations = (storage.staffInvitations || []).filter((i) => i.id !== invitationId);
     storage.storeMembers = (storage.storeMembers || []).filter(
-      (m) => m.invitation_token !== inv.token && m.user_email?.toLowerCase() !== inv.email.toLowerCase()
+      (m) => m.invitation_token !== inv.token
     );
     saveUserStorage(userId, storage);
 
@@ -1658,7 +1698,7 @@ export async function cancelStaffInvitation(
 
     await logStaffActivity(
       storeId,
-      `Cancelled invitation for ${inv.name} (${inv.email})`,
+      `Cancelled invitation for ${inv.name} (${inv.email || inv.phone || 'staff member'})`,
       performerName
     );
   }

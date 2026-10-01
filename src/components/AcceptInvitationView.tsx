@@ -41,6 +41,7 @@ export const AcceptInvitationView: React.FC<AcceptInvitationViewProps> = ({
   // Form states for unauthenticated users
   const [authMode, setAuthMode] = useState<'create_account' | 'sign_in'>('create_account');
   const [fullName, setFullName] = useState('');
+  const [emailInput, setEmailInput] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -75,6 +76,9 @@ export const AcceptInvitationView: React.FC<AcceptInvitationViewProps> = ({
 
         setInvitation(inv);
         setFullName(inv.name || '');
+        if (inv.email) {
+          setEmailInput(inv.email);
+        }
       } catch (err: any) {
         setErrorMsg(err?.message || 'Failed to inspect invitation details.');
       } finally {
@@ -137,15 +141,20 @@ export const AcceptInvitationView: React.FC<AcceptInvitationViewProps> = ({
 
     try {
       let activeUserId = user?.id;
-      let activeEmail = invitation.email;
+      const activeEmail = (invitation.email || emailInput).trim().toLowerCase();
+
+      if (!activeEmail || !activeEmail.includes('@')) {
+        setErrorMsg('Please enter a valid email address to complete your staff account setup.');
+        return;
+      }
 
       if (!user) {
         if (authMode === 'create_account') {
-          const { error, data } = await signUp(invitation.email, password, fullName || invitation.name);
+          const { error, data } = await signUp(activeEmail, password, fullName || invitation.name);
           if (error) throw error;
           activeUserId = data?.user?.id || `user-${Date.now()}`;
         } else {
-          const res = (await signIn(invitation.email, password)) as any;
+          const res = (await signIn(activeEmail, password)) as any;
           if (res?.error) throw res.error;
           activeUserId = res?.data?.user?.id || `user-${Date.now()}`;
         }
@@ -392,15 +401,22 @@ export const AcceptInvitationView: React.FC<AcceptInvitationViewProps> = ({
 
               <div>
                 <label className="block text-xs font-semibold text-slate-300 mb-1">
-                  Invited Email
+                  Email Address {invitation?.email ? '(Pre-verified)' : '*'}
                 </label>
                 <div className="relative">
                   <Mail className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                   <input
                     type="email"
-                    disabled
-                    value={invitation?.email || ''}
-                    className="w-full pl-9 pr-3 py-2 text-xs bg-slate-900/60 border border-slate-700 rounded-xl text-slate-400 cursor-not-allowed font-mono"
+                    required
+                    disabled={Boolean(invitation?.email)}
+                    placeholder="e.g. employee@company.com"
+                    value={invitation?.email || emailInput}
+                    onChange={(e) => setEmailInput(e.target.value)}
+                    className={`w-full pl-9 pr-3 py-2 text-xs border rounded-xl font-mono ${
+                      invitation?.email
+                        ? 'bg-slate-900/60 border-slate-700 text-slate-400 cursor-not-allowed'
+                        : 'bg-slate-900 border-slate-700 text-white focus:outline-none focus:border-blue-500'
+                    }`}
                   />
                 </div>
               </div>

@@ -45,14 +45,17 @@ export interface StoreMember {
   last_active?: string | null;
 }
 
+export type InvitationDeliveryMethod = 'whatsapp' | 'email' | 'copy_link';
+
 export interface StaffInvitation {
   id: string;
   store_id: string;
   store_name?: string;
   invited_by: string;
   invited_by_name?: string;
+  staff_id?: string;
   name: string;
-  email: string;
+  email?: string;
   phone?: string | null;
   role: string;
   permissions: string[];
@@ -61,6 +64,7 @@ export interface StaffInvitation {
   expires_at: string;
   created_at: string;
   accepted_at?: string | null;
+  delivery_method?: InvitationDeliveryMethod;
 }
 
 export interface StaffActivity {

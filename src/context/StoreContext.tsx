@@ -14,8 +14,15 @@ import {
   Role,
   CustomerPayment,
   StaffInvitation,
-  StaffActivity
+  StaffActivity,
+  InvitationDeliveryMethod
 } from '../types';
+import { 
+  validateAndFormatWhatsAppPhone, 
+  buildWhatsAppInviteMessage, 
+  buildWhatsAppLinks, 
+  openWhatsAppChat 
+} from '../lib/whatsapp';
 import { 
   fetchUserStores, 
   fetchProducts, 
@@ -79,19 +86,42 @@ interface StoreContextType {
   // Staff Invitation & Permission Actions
   inviteStaff: (params: {
     name: string;
-    email: string;
+    email?: string;
     phone?: string;
     role: string;
     permissions: string[];
     notes?: string;
+    deliveryMethod?: InvitationDeliveryMethod;
   }) => Promise<{
     member: StoreMember;
     invitation: StaffInvitation;
     accountCreated: boolean;
-    emailSent: boolean;
+    deliveryMethod: InvitationDeliveryMethod;
+    inviteUrl: string;
+    emailSent?: boolean;
     emailError?: string;
+    whatsappUrl?: string;
+    whatsappMessage?: string;
+    whatsappOpened?: boolean;
   }>;
-  resendInvite: (invitationId: string) => Promise<StaffInvitation & { emailSent?: boolean; emailError?: string }>;
+  resendInvite: (
+    invitationId: string,
+    options?: {
+      deliveryMethod?: InvitationDeliveryMethod;
+      email?: string;
+      phone?: string;
+    }
+  ) => Promise<
+    StaffInvitation & {
+      deliveryMethod: InvitationDeliveryMethod;
+      inviteUrl: string;
+      emailSent?: boolean;
+      emailError?: string;
+      whatsappUrl?: string;
+      whatsappMessage?: string;
+      whatsappOpened?: boolean;
+    }
+  >;
   cancelInvite: (invitationId: string) => Promise<void>;
   updateStaffPermissions: (memberId: string, role: string, permissions: string[]) => Promise<StoreMember>;
   suspendStaff: (memberId: string) => Promise<StoreMember>;
@@ -454,16 +484,20 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   // Staff Management Implementations
   const inviteStaff = async (params: {
     name: string;
-    email: string;
+    email?: string;
     phone?: string;
     role: string;
     permissions: string[];
     notes?: string;
+    deliveryMethod?: InvitationDeliveryMethod;
   }) => {
     if (!currentStore) throw new Error('No store selected');
     if (!user) throw new Error('Not authenticated');
 
-    // 1. Save staff account first (Principle: Even if email fails, do not delete the staff account)
+    const deliveryMethod: InvitationDeliveryMethod = 
+      params.deliveryMethod || (params.phone ? 'whatsapp' : 'email');
+
+    // 1. Save staff account first (Principle: Account created independently from delivery method)
     const result = await apiCreateStaffInvitation({
       storeId: currentStore.id,
       storeName: currentStore.name,
@@ -475,61 +509,141 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       role: params.role,
       permissions: params.permissions,
       notes: params.notes,
+      deliveryMethod,
     });
 
     setMembers((prev) => [result.member, ...prev]);
     setStaffInvitations((prev) => [result.invitation, ...prev]);
     fetchStaffActivity(currentStore.id).then(setStaffActivity).catch(console.warn);
 
-    // 2. Call backend Sendlib email service
     const origin = typeof window !== 'undefined' ? window.location.origin : '';
     const inviteUrl = `${origin}/?invite=${result.invitation.token}`;
-    const emailResult = await dispatchStaffInviteEmail({
-      to: params.email.trim(),
-      staffName: params.name.trim(),
-      storeName: currentStore.name,
-      role: params.role,
-      invitedByName: user.user_metadata?.full_name || user.email || 'Store Owner',
-      inviteUrl,
-      expiresAt: result.invitation.expires_at,
-      permissionsCount: params.permissions.length,
-    });
+
+    let emailSent: boolean | undefined = undefined;
+    let emailError: string | undefined = undefined;
+    let whatsappUrl: string | undefined = undefined;
+    let whatsappMessage: string | undefined = undefined;
+    let whatsappOpened = false;
+
+    // 2. Dispatch based on delivery method
+    if (deliveryMethod === 'whatsapp') {
+      const phoneValidation = validateAndFormatWhatsAppPhone(params.phone || '');
+      whatsappMessage = buildWhatsAppInviteMessage({
+        staffName: params.name,
+        storeName: currentStore.name,
+        role: params.role,
+        inviteUrl,
+      });
+
+      if (phoneValidation.valid) {
+        const links = buildWhatsAppLinks(phoneValidation.cleanNumber, whatsappMessage);
+        whatsappUrl = links.waMeUrl;
+        whatsappOpened = openWhatsAppChat(phoneValidation.cleanNumber, whatsappMessage);
+      }
+    } else if (deliveryMethod === 'email') {
+      const emailResult = await dispatchStaffInviteEmail({
+        to: (params.email || '').trim(),
+        staffName: params.name.trim(),
+        storeName: currentStore.name,
+        role: params.role,
+        invitedByName: user.user_metadata?.full_name || user.email || 'Store Owner',
+        inviteUrl,
+        expiresAt: result.invitation.expires_at,
+        permissionsCount: params.permissions.length,
+      });
+      emailSent = emailResult.emailSent;
+      emailError = emailResult.emailError;
+    } else if (deliveryMethod === 'copy_link') {
+      if (typeof navigator !== 'undefined' && navigator.clipboard) {
+        navigator.clipboard.writeText(inviteUrl).catch(() => {});
+      }
+    }
 
     return {
       member: result.member,
       invitation: result.invitation,
       accountCreated: true,
-      emailSent: emailResult.emailSent,
-      emailError: emailResult.emailError,
+      deliveryMethod,
+      inviteUrl,
+      emailSent,
+      emailError,
+      whatsappUrl,
+      whatsappMessage,
+      whatsappOpened,
     };
   };
 
-  const resendInvite = async (invitationId: string) => {
+  const resendInvite = async (
+    invitationId: string,
+    options?: {
+      deliveryMethod?: InvitationDeliveryMethod;
+      email?: string;
+      phone?: string;
+    }
+  ) => {
     if (!currentStore) throw new Error('No store selected');
     const performer = user?.user_metadata?.full_name || user?.email || 'Store Owner';
-    const updated = await apiResendStaffInvitation(currentStore.id, invitationId, performer);
+    const updated = await apiResendStaffInvitation(currentStore.id, invitationId, performer, options);
     setStaffInvitations((prev) => prev.map((i) => (i.id === invitationId ? updated : i)));
     fetchStaffActivity(currentStore.id).then(setStaffActivity).catch(console.warn);
 
+    const deliveryMethod: InvitationDeliveryMethod = 
+      options?.deliveryMethod || updated.delivery_method || (updated.phone ? 'whatsapp' : 'email');
+
     const origin = typeof window !== 'undefined' ? window.location.origin : '';
     const inviteUrl = `${origin}/?invite=${updated.token}`;
-    const recipientEmail = (updated.email || (updated as any).user_email || '').trim();
-    const staffName = (updated.name || (updated as any).user_name || 'Team Member').trim();
 
-    const emailResult = await dispatchStaffInviteEmail({
-      to: recipientEmail,
-      staffName,
-      storeName: currentStore.name || updated.store_name || 'StockWise Store',
-      role: updated.role || 'cashier',
-      invitedByName: performer,
-      inviteUrl,
-      expiresAt: updated.expires_at,
-      permissionsCount: updated.permissions?.length || 0,
-    });
+    let emailSent: boolean | undefined = undefined;
+    let emailError: string | undefined = undefined;
+    let whatsappUrl: string | undefined = undefined;
+    let whatsappMessage: string | undefined = undefined;
+    let whatsappOpened = false;
+
+    if (deliveryMethod === 'whatsapp') {
+      const targetPhone = options?.phone || updated.phone || '';
+      const phoneValidation = validateAndFormatWhatsAppPhone(targetPhone);
+      whatsappMessage = buildWhatsAppInviteMessage({
+        staffName: updated.name,
+        storeName: currentStore.name,
+        role: updated.role,
+        inviteUrl,
+      });
+
+      if (phoneValidation.valid) {
+        const links = buildWhatsAppLinks(phoneValidation.cleanNumber, whatsappMessage);
+        whatsappUrl = links.waMeUrl;
+        whatsappOpened = openWhatsAppChat(phoneValidation.cleanNumber, whatsappMessage);
+      }
+    } else if (deliveryMethod === 'email') {
+      const recipientEmail = (options?.email || updated.email || (updated as any).user_email || '').trim();
+      const staffName = (updated.name || (updated as any).user_name || 'Team Member').trim();
+
+      const emailResult = await dispatchStaffInviteEmail({
+        to: recipientEmail,
+        staffName,
+        storeName: currentStore.name || updated.store_name || 'StockWise Store',
+        role: updated.role || 'cashier',
+        invitedByName: performer,
+        inviteUrl,
+        expiresAt: updated.expires_at,
+        permissionsCount: updated.permissions?.length || 0,
+      });
+      emailSent = emailResult.emailSent;
+      emailError = emailResult.emailError;
+    } else if (deliveryMethod === 'copy_link') {
+      if (typeof navigator !== 'undefined' && navigator.clipboard) {
+        navigator.clipboard.writeText(inviteUrl).catch(() => {});
+      }
+    }
 
     return Object.assign(updated, {
-      emailSent: emailResult.emailSent,
-      emailError: emailResult.emailError,
+      deliveryMethod,
+      inviteUrl,
+      emailSent,
+      emailError,
+      whatsappUrl,
+      whatsappMessage,
+      whatsappOpened,
     });
   };
 

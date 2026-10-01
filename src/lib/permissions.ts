@@ -235,6 +235,15 @@ export function formatRoleName(role?: string | null): string {
 
 export function generateInvitationToken(): string {
   const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
+  if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
+    const buffer = new Uint8Array(24);
+    crypto.getRandomValues(buffer);
+    let token = 'inv_';
+    for (let i = 0; i < 24; i++) {
+      token += chars.charAt(buffer[i] % chars.length);
+    }
+    return token;
+  }
   let token = 'inv_';
   for (let i = 0; i < 24; i++) {
     token += chars.charAt(Math.floor(Math.random() * chars.length));

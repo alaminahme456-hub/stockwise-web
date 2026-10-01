@@ -14,6 +14,17 @@ const PORT = 3000;
 
 app.use(express.json());
 
+// Enable CORS and handle preflight requests
+app.use((req, res, next) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
+  if (req.method === 'OPTIONS') {
+    return res.sendStatus(204);
+  }
+  next();
+});
+
 // ============================================================================
 // API ROUTES (Server-side SendLib Integration)
 // ============================================================================
@@ -21,7 +32,7 @@ app.use(express.json());
 /**
  * Health check: verify if SendLib is configured without exposing the secret.
  */
-app.get('/api/sendlib/status', (req, res) => {
+app.get(['/api/sendlib/status', '/api/sendlib/status/'], (req, res) => {
   const isConfigured = Boolean(process.env.SENDLIB_API_KEY && process.env.SENDLIB_API_KEY.trim());
   res.json({
     configured: isConfigured,
@@ -33,7 +44,7 @@ app.get('/api/sendlib/status', (req, res) => {
 /**
  * Generic email sending endpoint
  */
-app.post('/api/send-email', async (req, res) => {
+app.post(['/api/send-email', '/api/send-email/'], async (req, res) => {
   const { to, subject, html, text, from } = req.body || {};
 
   if (!to || !subject || !html) {
@@ -55,7 +66,7 @@ app.post('/api/send-email', async (req, res) => {
 /**
  * Safe test email endpoint: sends a verification test email to a user-specified address.
  */
-app.post('/api/test-email', async (req, res) => {
+app.post(['/api/test-email', '/api/test-email/'], async (req, res) => {
   const { to } = req.body || {};
 
   if (!to || typeof to !== 'string' || !to.includes('@')) {
@@ -111,9 +122,31 @@ app.post('/api/test-email', async (req, res) => {
 /**
  * Staff invitation email dispatch
  */
-app.post('/api/staff-invite-email', async (req, res) => {
-  const {
-    to,
+app.post(['/api/staff-invite-email', '/api/staff-invite-email/'], async (req, res) => {
+  const to = (req.body?.to || req.body?.email || '').trim();
+  const staffName = (req.body?.staffName || req.body?.name || req.body?.userName || 'Team Member').trim();
+  const storeName = (req.body?.storeName || 'StockWise Store').trim();
+  const role = req.body?.role || 'cashier';
+  const invitedByName = req.body?.invitedByName || 'Store Owner';
+  const inviteUrl = req.body?.inviteUrl || req.body?.url || '';
+  const expiresAt = req.body?.expiresAt;
+  const permissionsCount = req.body?.permissionsCount;
+
+  if (!to || !to.includes('@')) {
+    return res.status(400).json({
+      success: false,
+      error: 'Missing required field: a valid recipient email (to) is required.',
+    });
+  }
+
+  if (!inviteUrl) {
+    return res.status(400).json({
+      success: false,
+      error: 'Missing required field: invitation activation URL (inviteUrl) is required.',
+    });
+  }
+
+  const { html, text } = buildStaffInvitationHtml({
     staffName,
     storeName,
     role,
@@ -121,27 +154,10 @@ app.post('/api/staff-invite-email', async (req, res) => {
     inviteUrl,
     expiresAt,
     permissionsCount,
-  } = req.body || {};
-
-  if (!to || !staffName || !storeName || !inviteUrl) {
-    return res.status(400).json({
-      success: false,
-      error: 'Missing required invitation fields: to, staffName, storeName, and inviteUrl are required.',
-    });
-  }
-
-  const { html, text } = buildStaffInvitationHtml({
-    staffName,
-    storeName,
-    role: role || 'cashier',
-    invitedByName: invitedByName || 'Store Owner',
-    inviteUrl,
-    expiresAt,
-    permissionsCount,
   });
 
   const result = await sendEmail({
-    to: to.trim(),
+    to,
     subject: `You're invited to join ${storeName} on StockWise`,
     html,
     text,

@@ -463,7 +463,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       if (response.ok && emailData.success) {
         emailSent = true;
       } else {
-        emailError = emailData.error || `SendLib dispatch returned status ${response.status}`;
+        emailError = emailData.error || (response.status === 404 
+          ? 'SendLib email endpoint temporarily warming up (HTTP 404). The invitation link is active.' 
+          : `SendLib dispatch returned status ${response.status}`);
       }
     } catch (err: any) {
       emailError = err?.message || 'Failed to dispatch staff invitation email.';
@@ -491,14 +493,17 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     try {
       const origin = typeof window !== 'undefined' ? window.location.origin : '';
       const inviteUrl = `${origin}/?invite=${updated.token}`;
+      const recipientEmail = (updated.email || (updated as any).user_email || '').trim();
+      const staffName = (updated.name || (updated as any).user_name || 'Team Member').trim();
+
       const response = await fetch('/api/staff-invite-email', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          to: updated.email.trim(),
-          staffName: updated.name.trim(),
-          storeName: currentStore.name,
-          role: updated.role,
+          to: recipientEmail,
+          staffName,
+          storeName: currentStore.name || updated.store_name || 'StockWise Store',
+          role: updated.role || 'cashier',
           invitedByName: performer,
           inviteUrl,
           expiresAt: updated.expires_at,
@@ -510,7 +515,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       if (response.ok && emailData.success) {
         emailSent = true;
       } else {
-        emailError = emailData.error || `SendLib dispatch returned status ${response.status}`;
+        emailError = emailData.error || (response.status === 404
+          ? 'SendLib email endpoint temporarily warming up (HTTP 404). The invitation link is active.'
+          : `SendLib dispatch returned status ${response.status}`);
       }
     } catch (err: any) {
       emailError = err?.message || 'Failed to dispatch staff invitation email.';

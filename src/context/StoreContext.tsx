@@ -517,7 +517,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     fetchStaffActivity(currentStore.id).then(setStaffActivity).catch(console.warn);
 
     const origin = typeof window !== 'undefined' ? window.location.origin : '';
-    const inviteUrl = `${origin}/?invite=${result.invitation.token}`;
+    const inviteUrl = `${origin}/invite/${result.invitation.token}`;
 
     let emailSent: boolean | undefined = undefined;
     let emailError: string | undefined = undefined;
@@ -591,7 +591,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       options?.deliveryMethod || updated.delivery_method || (updated.phone ? 'whatsapp' : 'email');
 
     const origin = typeof window !== 'undefined' ? window.location.origin : '';
-    const inviteUrl = `${origin}/?invite=${updated.token}`;
+    const inviteUrl = `${origin}/invite/${updated.token}`;
 
     let emailSent: boolean | undefined = undefined;
     let emailError: string | undefined = undefined;

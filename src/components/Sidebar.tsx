@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { NavigationTab } from '../types';
 import { useStore } from '../context/StoreContext';
+import { PWAInstallButton } from './PWAInstallButton';
 
 interface SidebarProps {
   currentTab: NavigationTab;
@@ -159,6 +160,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </button>
           );
         })}
+      </div>
+
+      {/* PWA / Device Installation Button */}
+      <div className="px-3 pt-2">
+        <PWAInstallButton variant="sidebar" />
       </div>
 
       {/* Low stock alert banner at bottom if items exist */}

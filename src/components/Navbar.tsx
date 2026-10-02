@@ -9,6 +9,7 @@ import {
   Settings
 } from 'lucide-react';
 import { NavigationTab } from '../types';
+import { PWAInstallButton } from './PWAInstallButton';
 
 interface NavbarProps {
   onNavigate?: (tab: NavigationTab) => void;
@@ -73,6 +74,9 @@ export const Navbar: React.FC<NavbarProps> = ({ onNavigate }) => {
             <span>{displayRole}</span>
           </div>
         </div>
+
+        {/* PWA / Device Install Button */}
+        <PWAInstallButton />
 
         {/* Real-time Status Indicator */}
         <div 

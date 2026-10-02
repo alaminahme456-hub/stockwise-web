@@ -17,6 +17,7 @@ import { ReportsView } from './components/ReportsView';
 import { StaffView } from './components/StaffView';
 import { SettingsView } from './components/SettingsView';
 import { AcceptInvitationView } from './components/AcceptInvitationView';
+import { AndroidDownloadView } from './components/AndroidDownloadView';
 import { MobileBottomNav } from './components/MobileBottomNav';
 import { NavigationTab, Product } from './types';
 import { createStore } from './lib/db';
@@ -66,6 +67,14 @@ const MainAppLayout: React.FC = () => {
     }
   }, [currentMember, hasPermission]);
 
+  // Dedicated download route state (/download or /download/android)
+  const [isDownloadRoute, setIsDownloadRoute] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      return window.location.pathname.startsWith('/download');
+    }
+    return false;
+  });
+
   // Global invitation token state (from URL search, hash, pathname or in-app testing)
   const [activeInviteToken, setActiveInviteToken] = useState<string | null>(() => {
     if (typeof window !== 'undefined') {
@@ -91,14 +100,24 @@ const MainAppLayout: React.FC = () => {
     return null;
   });
 
-  // Listen for browser URL / hash changes
+  // Listen for browser URL / hash changes & Android deep link appUrlOpen events
   React.useEffect(() => {
     const handleUrlCheck = () => {
+      const pathname = window.location.pathname;
+      setIsDownloadRoute(pathname.startsWith('/download'));
+
       const searchParams = new URLSearchParams(window.location.search);
       const queryToken = searchParams.get('invite');
       if (queryToken) {
         setActiveInviteToken(queryToken);
         return;
+      }
+      if (pathname.includes('/invite/')) {
+        const parts = pathname.split('/invite/');
+        if (parts[1]) {
+          setActiveInviteToken(parts[1].replace(/[^a-zA-Z0-9_-]/g, ''));
+          return;
+        }
       }
       const hash = window.location.hash;
       if (hash.includes('invite/')) {
@@ -106,9 +125,34 @@ const MainAppLayout: React.FC = () => {
         if (parts[1]) setActiveInviteToken(parts[1].replace(/[^a-zA-Z0-9_-]/g, ''));
       }
     };
+
     window.addEventListener('popstate', handleUrlCheck);
     window.addEventListener('hashchange', handleUrlCheck);
+
+    // Capacitor Native Android Deep Link Listener
+    let capListenerHandle: any = null;
+    try {
+      import('@capacitor/app').then(({ App: CapApp }) => {
+        CapApp.addListener('appUrlOpen', (event) => {
+          if (event?.url) {
+            const urlStr = event.url;
+            // Matches stockwise://invite/TOKEN or https://.../invite/TOKEN
+            const match = urlStr.match(/invite[=/]([a-zA-Z0-9_-]+)/);
+            if (match && match[1]) {
+              setActiveInviteToken(match[1]);
+              setIsDownloadRoute(false);
+            }
+          }
+        }).then((handle) => {
+          capListenerHandle = handle;
+        });
+      }).catch(() => {});
+    } catch {}
+
     return () => {
+      if (capListenerHandle && typeof capListenerHandle.remove === 'function') {
+        capListenerHandle.remove();
+      }
       window.removeEventListener('popstate', handleUrlCheck);
       window.removeEventListener('hashchange', handleUrlCheck);
     };
@@ -125,6 +169,29 @@ const MainAppLayout: React.FC = () => {
   const [creatingStore, setCreatingStore] = useState(false);
   const [createStoreError, setCreateStoreError] = useState<string | null>(null);
 
+  // Dedicated Android APK Download Page
+  if (isDownloadRoute) {
+    return (
+      <AndroidDownloadView
+        token={activeInviteToken}
+        onOpenInvitation={() => {
+          setIsDownloadRoute(false);
+          if (typeof window !== 'undefined' && window.history.pushState) {
+            const targetUrl = activeInviteToken ? `/invite/${activeInviteToken}` : '/';
+            window.history.pushState({}, document.title, targetUrl);
+          }
+        }}
+        onContinueInBrowser={() => {
+          setIsDownloadRoute(false);
+          if (typeof window !== 'undefined' && window.history.pushState) {
+            const targetUrl = activeInviteToken ? `/invite/${activeInviteToken}` : '/';
+            window.history.pushState({}, document.title, targetUrl);
+          }
+        }}
+      />
+    );
+  }
+
   // If active invitation token is present, show invitation flow (both for guests & signed in users)
   if (activeInviteToken) {
     return (
@@ -132,8 +199,11 @@ const MainAppLayout: React.FC = () => {
         token={activeInviteToken}
         onCompleted={async () => {
           setActiveInviteToken(null);
+          setIsDownloadRoute(false);
           if (typeof window !== 'undefined' && window.history.pushState) {
-            const cleanUrl = window.location.pathname.startsWith('/invite') ? '/' : window.location.pathname;
+            const cleanUrl = window.location.pathname.startsWith('/invite') || window.location.pathname.startsWith('/download') 
+              ? '/' 
+              : window.location.pathname;
             window.history.pushState({}, document.title, cleanUrl);
           }
           await refreshStores();
@@ -141,8 +211,11 @@ const MainAppLayout: React.FC = () => {
         }}
         onCancel={() => {
           setActiveInviteToken(null);
+          setIsDownloadRoute(false);
           if (typeof window !== 'undefined' && window.history.pushState) {
-            const cleanUrl = window.location.pathname.startsWith('/invite') ? '/' : window.location.pathname;
+            const cleanUrl = window.location.pathname.startsWith('/invite') || window.location.pathname.startsWith('/download') 
+              ? '/' 
+              : window.location.pathname;
             window.history.pushState({}, document.title, cleanUrl);
           }
         }}

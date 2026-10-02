@@ -21,9 +21,14 @@ import {
   Send,
   Key,
   ShieldCheck,
-  RefreshCw
+  RefreshCw,
+  Smartphone,
+  Download,
+  ExternalLink
 } from 'lucide-react';
 import { Store } from '../types';
+import { PWAInstallButton } from './PWAInstallButton';
+import { STOCKWISE_ANDROID_APK_URL, isApkConfigured } from '../config/appConfig';
 
 export const SettingsView: React.FC = () => {
   const { currentStore, settings, stores, setCurrentStore, refreshStoreData, refreshStores } = useStore();
@@ -686,6 +691,82 @@ export const SettingsView: React.FC = () => {
         <div className="text-[11px] text-slate-500 flex items-center gap-1.5 pt-1">
           <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
           <span>Never exposed to client bundles, Android APK, or version control. Strictly protected in server runtime.</span>
+        </div>
+      </div>
+
+      {/* Cross-Device & Mobile Access Section */}
+      <div className="bg-white rounded-2xl border border-slate-200 p-5 sm:p-6 shadow-xs space-y-4">
+        <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center">
+              <Smartphone className="w-5 h-5" />
+            </div>
+            <div>
+              <h2 className="text-base font-bold text-slate-900">Mobile &amp; App Access</h2>
+              <p className="text-xs text-slate-500">Android APK download, iPhone PWA install, and staff access</p>
+            </div>
+          </div>
+          <PWAInstallButton />
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1">
+          {/* Android App Card */}
+          <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                <Smartphone className="w-4 h-4 text-emerald-600" />
+                <span>StockWise Android APK</span>
+              </span>
+              <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded bg-emerald-100 text-emerald-800">
+                Native App
+              </span>
+            </div>
+            <p className="text-xs text-slate-600 leading-relaxed">
+              Provides offline barcode scanning, dedicated hardware POS support, and deep-linked staff invitations.
+            </p>
+            <div className="pt-1 flex items-center gap-2">
+              {isApkConfigured() ? (
+                <a
+                  href={STOCKWISE_ANDROID_APK_URL}
+                  download
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold transition shadow-xs"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Download APK</span>
+                </a>
+              ) : (
+                <span className="text-xs text-slate-500 italic">
+                  APK release being prepared (configurable in .env)
+                </span>
+              )}
+              <a
+                href="/download/android"
+                className="inline-flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700 font-semibold"
+              >
+                <span>View Download Page</span>
+                <ExternalLink className="w-3 h-3" />
+              </a>
+            </div>
+          </div>
+
+          {/* iPhone / iPad PWA Card */}
+          <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                <Smartphone className="w-4 h-4 text-blue-600" />
+                <span>iPhone / iPad (PWA)</span>
+              </span>
+              <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded bg-blue-100 text-blue-800">
+                PWA Web App
+              </span>
+            </div>
+            <p className="text-xs text-slate-600 leading-relaxed">
+              Install directly from Safari by tapping <strong>Share</strong> &rarr; <strong>Add to Home Screen</strong>. Launches in fullscreen standalone mode.
+            </p>
+            <div className="pt-1">
+              <PWAInstallButton />
+            </div>
+          </div>
         </div>
       </div>
 

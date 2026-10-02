@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { useStore } from '../context/StoreContext';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
-import { StoreMember, StaffInvitation, StaffActivity } from '../types';
+import { StoreMember, StaffInvitation, StaffActivity, InvitationDeliveryMethod } from '../types';
 import { 
   ALL_PERMISSIONS, 
   PERMISSION_GROUPS, 
@@ -11,6 +11,13 @@ import {
   PermissionItem 
 } from '../lib/permissions';
 import { formatDate } from '../lib/utils';
+import { 
+  validateAndFormatWhatsAppPhone, 
+  buildWhatsAppInviteMessage, 
+  buildWhatsAppLinks, 
+  openWhatsAppChat 
+} from '../lib/whatsapp';
+import { WhatsAppIcon } from './WhatsAppIcon';
 import { ExpandableSearch } from './ExpandableSearch';
 import { 
   ShieldCheck, 
@@ -39,7 +46,11 @@ import {
   ChevronDown, 
   ChevronRight,
   Smartphone,
-  Sparkles
+  Sparkles,
+  Link as LinkIcon,
+  MessageCircle,
+  Share2,
+  Globe
 } from 'lucide-react';
 
 interface StaffViewProps {
@@ -77,6 +88,7 @@ export const StaffView: React.FC<StaffViewProps> = ({ onOpenInvitationToken }) =
   const [newStaffName, setNewStaffName] = useState('');
   const [newStaffEmail, setNewStaffEmail] = useState('');
   const [newStaffPhone, setNewStaffPhone] = useState('');
+  const [newStaffDeliveryMethod, setNewStaffDeliveryMethod] = useState<InvitationDeliveryMethod>('whatsapp');
   const [newStaffRole, setNewStaffRole] = useState<string>('cashier');
   const [newStaffNotes, setNewStaffNotes] = useState('');
   const [selectedPermissions, setSelectedPermissions] = useState<string[]>(
@@ -85,15 +97,38 @@ export const StaffView: React.FC<StaffViewProps> = ({ onOpenInvitationToken }) =
   const [creatingLoading, setCreatingLoading] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
 
+  // Phone number validation for WhatsApp
+  const phoneValidation = useMemo(() => {
+    return validateAndFormatWhatsAppPhone(newStaffPhone);
+  }, [newStaffPhone]);
+
   // Success Confirmation Dialog
   const [invitationSuccess, setInvitationSuccess] = useState<{
     member: StoreMember;
     invitation: StaffInvitation;
     accountCreated?: boolean;
+    deliveryMethod?: InvitationDeliveryMethod;
+    inviteUrl?: string;
     emailSent?: boolean;
     emailError?: string;
+    whatsappUrl?: string;
+    whatsappMessage?: string;
+    whatsappOpened?: boolean;
   } | null>(null);
   const [copiedLink, setCopiedLink] = useState(false);
+  const [copiedWhatsAppMsg, setCopiedWhatsAppMsg] = useState(false);
+
+  // Resend Staff Invitation Modal
+  const [resendingInv, setResendingInv] = useState<StaffInvitation | null>(null);
+  const [resendDeliveryMethod, setResendDeliveryMethod] = useState<InvitationDeliveryMethod>('whatsapp');
+  const [resendPhone, setResendPhone] = useState('');
+  const [resendEmail, setResendEmail] = useState('');
+  const [resendingLoading, setResendingLoading] = useState(false);
+  const [resendError, setResendError] = useState<string | null>(null);
+
+  const resendPhoneValidation = useMemo(() => {
+    return validateAndFormatWhatsAppPhone(resendPhone);
+  }, [resendPhone]);
 
   // Email Preview Modal
   const [previewEmailInv, setPreviewEmailInv] = useState<StaffInvitation | null>(null);
@@ -176,6 +211,7 @@ export const StaffView: React.FC<StaffViewProps> = ({ onOpenInvitationToken }) =
     setNewStaffName('');
     setNewStaffEmail('');
     setNewStaffPhone('');
+    setNewStaffDeliveryMethod('whatsapp');
     setNewStaffRole('cashier');
     setNewStaffNotes('');
     setSelectedPermissions([...ROLE_TEMPLATES.cashier.permissions]);
@@ -186,9 +222,25 @@ export const StaffView: React.FC<StaffViewProps> = ({ onOpenInvitationToken }) =
 
   // Submit Create Staff & Send Invitation
   const handleCreateStaffSubmit = async () => {
-    if (!newStaffName.trim() || !newStaffEmail.trim()) {
-      setCreateError('Full name and email address are required.');
+    if (!newStaffName.trim()) {
+      setCreateError('Staff full name is required.');
       return;
+    }
+
+    if (newStaffDeliveryMethod === 'whatsapp') {
+      if (!newStaffPhone.trim()) {
+        setCreateError('WhatsApp phone number is required.');
+        return;
+      }
+      if (!phoneValidation.valid) {
+        setCreateError(phoneValidation.error || 'Please enter a valid international WhatsApp phone number.');
+        return;
+      }
+    } else if (newStaffDeliveryMethod === 'email') {
+      if (!newStaffEmail.trim() || !newStaffEmail.includes('@')) {
+        setCreateError('A valid email address is required.');
+        return;
+      }
     }
 
     setCreatingLoading(true);
@@ -197,23 +249,32 @@ export const StaffView: React.FC<StaffViewProps> = ({ onOpenInvitationToken }) =
     try {
       const result = await inviteStaff({
         name: newStaffName.trim(),
-        email: newStaffEmail.trim(),
-        phone: newStaffPhone.trim() || undefined,
+        email: newStaffEmail.trim() || undefined,
+        phone: newStaffDeliveryMethod === 'whatsapp' 
+          ? phoneValidation.e164WithPlus 
+          : newStaffPhone.trim() || undefined,
         role: newStaffRole,
         permissions: selectedPermissions,
         notes: newStaffNotes.trim() || undefined,
+        deliveryMethod: newStaffDeliveryMethod,
       });
 
       setIsAddModalOpen(false);
       setInvitationSuccess(result);
 
-      if (result.emailSent) {
-        showToast(`✓ Staff member created & email invitation dispatched via SendLib`, 'success');
-      } else {
-        showToast(
-          `Staff account created! (SendLib status: ${result.emailError || 'pending delivery'}). You can copy the invite link below.`,
-          'info'
-        );
+      if (newStaffDeliveryMethod === 'whatsapp') {
+        showToast('✓ Staff created & WhatsApp DM opened with pre-filled invitation', 'success');
+      } else if (newStaffDeliveryMethod === 'email') {
+        if (result.emailSent) {
+          showToast(`✓ Staff member created & email invitation dispatched via SendLib`, 'success');
+        } else {
+          showToast(
+            `Staff account created! (SendLib status: ${result.emailError || 'pending delivery'}). You can copy the invite link below.`,
+            'info'
+          );
+        }
+      } else if (newStaffDeliveryMethod === 'copy_link') {
+        showToast('✓ Staff created & invitation link copied to clipboard!', 'success');
       }
     } catch (err: any) {
       setCreateError(err?.message || 'Failed to create staff member and send invitation.');
@@ -222,23 +283,67 @@ export const StaffView: React.FC<StaffViewProps> = ({ onOpenInvitationToken }) =
     }
   };
 
-  // Resend invitation handler
-  const handleResend = async (invitationId: string) => {
+  // Open Resend Invitation Dialog
+  const handleOpenResendModal = (inv: StaffInvitation) => {
+    setResendingInv(inv);
+    setResendDeliveryMethod(inv.delivery_method || (inv.phone ? 'whatsapp' : 'email'));
+    setResendPhone(inv.phone || '');
+    setResendEmail(inv.email || '');
+    setResendError(null);
+  };
+
+  // Execute Resend Staff Invitation
+  const handleExecuteResend = async () => {
+    if (!resendingInv) return;
+
+    if (resendDeliveryMethod === 'whatsapp') {
+      if (!resendPhone.trim()) {
+        setResendError('WhatsApp phone number is required.');
+        return;
+      }
+      if (!resendPhoneValidation.valid) {
+        setResendError(resendPhoneValidation.error || 'Please enter a valid international WhatsApp phone number.');
+        return;
+      }
+    } else if (resendDeliveryMethod === 'email') {
+      if (!resendEmail.trim() || !resendEmail.includes('@')) {
+        setResendError('A valid email address is required.');
+        return;
+      }
+    }
+
+    setResendingLoading(true);
+    setResendError(null);
+
     try {
-      const updated = await resendInvite(invitationId);
-      setPreviewEmailInv(updated);
-      if (updated.emailSent) {
-        showToast(`✓ Staff invitation email resent via SendLib to ${updated.email}`, 'success');
-      } else {
-        showToast(
-          updated.emailError
-            ? `Invitation link renewed. SendLib email notice: ${updated.emailError}`
-            : '✓ Staff invitation link renewed',
-          'info'
-        );
+      const updated = await resendInvite(resendingInv.id, {
+        deliveryMethod: resendDeliveryMethod,
+        phone: resendDeliveryMethod === 'whatsapp' ? resendPhoneValidation.e164WithPlus : resendPhone.trim() || undefined,
+        email: resendEmail.trim() || undefined,
+      });
+
+      setResendingInv(null);
+
+      if (resendDeliveryMethod === 'whatsapp') {
+        showToast(`✓ Staff invitation renewed & opened in WhatsApp for ${updated.name}`, 'success');
+      } else if (resendDeliveryMethod === 'email') {
+        if (updated.emailSent) {
+          showToast(`✓ Staff invitation email resent via SendLib to ${updated.email}`, 'success');
+        } else {
+          showToast(
+            updated.emailError
+              ? `Invitation link renewed. SendLib notice: ${updated.emailError}`
+              : '✓ Staff invitation link renewed',
+            'info'
+          );
+        }
+      } else if (resendDeliveryMethod === 'copy_link') {
+        showToast('✓ Renewed invitation link copied to clipboard!', 'success');
       }
     } catch (err: any) {
-      showToast(err?.message ? `Could not resend invitation: ${err.message}` : 'Could not resend invitation. Please try again.', 'error');
+      setResendError(err?.message || 'Failed to resend invitation.');
+    } finally {
+      setResendingLoading(false);
     }
   };
 
@@ -327,11 +432,20 @@ export const StaffView: React.FC<StaffViewProps> = ({ onOpenInvitationToken }) =
   // Helper: copy invitation link to clipboard
   const handleCopyLink = (token: string) => {
     const origin = typeof window !== 'undefined' ? window.location.origin : '';
-    const inviteUrl = `${origin}/?invite=${token}`;
+    const inviteUrl = `${origin}/invite/${token}`;
     if (navigator.clipboard) {
       navigator.clipboard.writeText(inviteUrl);
       setCopiedLink(true);
       setTimeout(() => setCopiedLink(false), 2000);
+    }
+  };
+
+  const handleCopyWhatsAppMessage = (msg: string) => {
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(msg);
+      setCopiedWhatsAppMsg(true);
+      showToast('✓ WhatsApp message copied to clipboard!', 'info');
+      setTimeout(() => setCopiedWhatsAppMsg(false), 2000);
     }
   };
 
@@ -448,12 +562,17 @@ export const StaffView: React.FC<StaffViewProps> = ({ onOpenInvitationToken }) =
               const isCurrent = m.user_id === user?.id;
               const isOwner = m.role === 'owner' || m.store_id === currentStore?.id && currentStore?.owner_id === m.user_id;
               const displayName = m.user_name || m.user_email?.split('@')[0] || 'Staff User';
-              const displayEmail = m.user_email || 'No email recorded';
+              const displayEmail = m.user_email || (m.phone ? `WhatsApp: ${m.phone}` : 'No email recorded');
               const permsCount = m.permissions ? m.permissions.length : (ROLE_TEMPLATES[m.role as string]?.permissions?.length || 0);
 
               // Associated pending invitation if any
               const pendingInv = staffInvitations.find(
-                (i) => i.status === 'pending' && (i.token === m.invitation_token || i.email.toLowerCase() === m.user_email?.toLowerCase())
+                (i) => i.status === 'pending' && (
+                  i.token === m.invitation_token || 
+                  (i.email && m.user_email && i.email.toLowerCase() === m.user_email.toLowerCase()) ||
+                  (i.phone && m.phone && i.phone === m.phone) ||
+                  i.staff_id === m.id
+                )
               );
 
               return (
@@ -575,9 +694,9 @@ export const StaffView: React.FC<StaffViewProps> = ({ onOpenInvitationToken }) =
 
                           <button
                             type="button"
-                            onClick={() => handleResend(pendingInv.id)}
+                            onClick={() => handleOpenResendModal(pendingInv)}
                             className="px-2.5 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-semibold rounded-xl transition flex items-center gap-1 cursor-pointer"
-                            title="Resend invitation email"
+                            title="Resend invitation via WhatsApp, Email, or Link"
                           >
                             <Send className="w-3.5 h-3.5" />
                             <span>Resend</span>
@@ -744,14 +863,20 @@ export const StaffView: React.FC<StaffViewProps> = ({ onOpenInvitationToken }) =
             {/* Stepper Progress Header */}
             <div className="grid grid-cols-3 gap-2 my-4">
               {[
-                { step: 'details', label: '1. Staff Details & Role' },
+                { step: 'details', label: '1. Staff & Delivery' },
                 { step: 'permissions', label: '2. Set Permissions' },
                 { step: 'preview', label: '3. Review & Send' },
               ].map((s) => (
                 <button
                   key={s.step}
                   type="button"
-                  disabled={s.step === 'permissions' && (!newStaffName || !newStaffEmail)}
+                  disabled={
+                    s.step === 'permissions' && (
+                      !newStaffName.trim() ||
+                      (newStaffDeliveryMethod === 'whatsapp' && (!newStaffPhone.trim() || !phoneValidation.valid)) ||
+                      (newStaffDeliveryMethod === 'email' && (!newStaffEmail.trim() || !newStaffEmail.includes('@')))
+                    )
+                  }
                   onClick={() => setAddStep(s.step as any)}
                   className={`py-2 px-1 text-center rounded-xl text-xs font-bold transition border cursor-pointer ${
                     addStep === s.step
@@ -771,9 +896,10 @@ export const StaffView: React.FC<StaffViewProps> = ({ onOpenInvitationToken }) =
               </div>
             )}
 
-            {/* STEP 1: Staff Details & Role Selection */}
+            {/* STEP 1: Staff Details, Delivery Method & Role Selection */}
             {addStep === 'details' && (
               <div className="space-y-4">
+                {/* 1. Full Name & Role Template */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                   <div>
                     <label className="block text-xs font-semibold text-slate-700 mb-1">
@@ -782,39 +908,13 @@ export const StaffView: React.FC<StaffViewProps> = ({ onOpenInvitationToken }) =
                     <input
                       type="text"
                       required
-                      placeholder="e.g. John Doe"
+                      placeholder="e.g. David"
                       value={newStaffName}
-                      onChange={(e) => setNewStaffName(e.target.value)}
-                      className="w-full px-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-blue-500"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">
-                      Email Address *
-                    </label>
-                    <input
-                      type="email"
-                      required
-                      placeholder="john@example.com"
-                      value={newStaffEmail}
-                      onChange={(e) => setNewStaffEmail(e.target.value)}
-                      className="w-full px-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-blue-500"
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">
-                      Phone Number (Optional)
-                    </label>
-                    <input
-                      type="tel"
-                      placeholder="+234 800 000 0000"
-                      value={newStaffPhone}
-                      onChange={(e) => setNewStaffPhone(e.target.value)}
-                      className="w-full px-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-blue-500"
+                      onChange={(e) => {
+                        setNewStaffName(e.target.value);
+                        if (createError) setCreateError(null);
+                      }}
+                      className="w-full px-3.5 py-2.5 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-blue-500 font-medium"
                     />
                   </div>
 
@@ -826,15 +926,271 @@ export const StaffView: React.FC<StaffViewProps> = ({ onOpenInvitationToken }) =
                       type="text"
                       disabled
                       value={currentStore?.name || 'Active Store'}
-                      className="w-full px-3 py-2 text-sm bg-slate-100 border border-slate-200 rounded-xl text-slate-500 cursor-not-allowed"
+                      className="w-full px-3.5 py-2.5 text-sm bg-slate-100 border border-slate-200 rounded-xl text-slate-500 cursor-not-allowed font-medium"
                     />
                   </div>
                 </div>
 
-                {/* Role Template Selector */}
+                {/* 2. INVITATION FLOW: How would you like to send the invitation? */}
+                <div className="pt-1">
+                  <div className="mb-2">
+                    <label className="block text-xs font-bold text-slate-900 tracking-tight">
+                      How would you like to send the invitation? *
+                    </label>
+                    <p className="text-[11px] text-slate-500">
+                      Choose your preferred delivery channel for the secure invitation link
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                    {/* Option 1: WhatsApp */}
+                    <div
+                      onClick={() => {
+                        setNewStaffDeliveryMethod('whatsapp');
+                        if (createError) setCreateError(null);
+                      }}
+                      className={`p-3.5 rounded-2xl border-2 cursor-pointer transition text-left flex flex-col justify-between ${
+                        newStaffDeliveryMethod === 'whatsapp'
+                          ? 'border-emerald-500 bg-emerald-50/70 shadow-xs'
+                          : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50'
+                      }`}
+                    >
+                      <div>
+                        <div className="flex items-center justify-between">
+                          <div className="w-8 h-8 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center">
+                            <WhatsAppIcon className="w-4 h-4 text-emerald-600" />
+                          </div>
+                          {newStaffDeliveryMethod === 'whatsapp' ? (
+                            <span className="w-5 h-5 rounded-full bg-emerald-600 text-white flex items-center justify-center text-[11px] font-bold">
+                              ✓
+                            </span>
+                          ) : (
+                            <span className="w-4 h-4 rounded-full border border-slate-300" />
+                          )}
+                        </div>
+                        <div className="font-bold text-slate-900 text-xs sm:text-sm mt-2.5">
+                          Send via WhatsApp
+                        </div>
+                        <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
+                          Open the staff member&apos;s WhatsApp chat with the invitation ready to send.
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Option 2: Email */}
+                    <div
+                      onClick={() => {
+                        setNewStaffDeliveryMethod('email');
+                        if (createError) setCreateError(null);
+                      }}
+                      className={`p-3.5 rounded-2xl border-2 cursor-pointer transition text-left flex flex-col justify-between ${
+                        newStaffDeliveryMethod === 'email'
+                          ? 'border-blue-600 bg-blue-50/70 shadow-xs'
+                          : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50'
+                      }`}
+                    >
+                      <div>
+                        <div className="flex items-center justify-between">
+                          <div className="w-8 h-8 rounded-xl bg-blue-100 text-blue-700 flex items-center justify-center">
+                            <Mail className="w-4 h-4 text-blue-600" />
+                          </div>
+                          {newStaffDeliveryMethod === 'email' ? (
+                            <span className="w-5 h-5 rounded-full bg-blue-600 text-white flex items-center justify-center text-[11px] font-bold">
+                              ✓
+                            </span>
+                          ) : (
+                            <span className="w-4 h-4 rounded-full border border-slate-300" />
+                          )}
+                        </div>
+                        <div className="font-bold text-slate-900 text-xs sm:text-sm mt-2.5">
+                          Send via Email
+                        </div>
+                        <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
+                          Send the invitation directly to the staff member&apos;s email.
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Option 3: Copy Link */}
+                    <div
+                      onClick={() => {
+                        setNewStaffDeliveryMethod('copy_link');
+                        if (createError) setCreateError(null);
+                      }}
+                      className={`p-3.5 rounded-2xl border-2 cursor-pointer transition text-left flex flex-col justify-between ${
+                        newStaffDeliveryMethod === 'copy_link'
+                          ? 'border-indigo-600 bg-indigo-50/70 shadow-xs'
+                          : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50'
+                      }`}
+                    >
+                      <div>
+                        <div className="flex items-center justify-between">
+                          <div className="w-8 h-8 rounded-xl bg-indigo-100 text-indigo-700 flex items-center justify-center">
+                            <LinkIcon className="w-4 h-4 text-indigo-600" />
+                          </div>
+                          {newStaffDeliveryMethod === 'copy_link' ? (
+                            <span className="w-5 h-5 rounded-full bg-indigo-600 text-white flex items-center justify-center text-[11px] font-bold">
+                              ✓
+                            </span>
+                          ) : (
+                            <span className="w-4 h-4 rounded-full border border-slate-300" />
+                          )}
+                        </div>
+                        <div className="font-bold text-slate-900 text-xs sm:text-sm mt-2.5">
+                          Copy Invitation Link
+                        </div>
+                        <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
+                          Copy the invitation link and share it anywhere.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 3. DYNAMIC CONTACT FIELDS BASED ON DELIVERY METHOD */}
+                <div className="p-3.5 rounded-2xl bg-slate-50/80 border border-slate-200 space-y-3">
+                  {newStaffDeliveryMethod === 'whatsapp' && (
+                    <div className="space-y-3">
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-900 mb-1 flex items-center justify-between">
+                          <span>WhatsApp Phone Number *</span>
+                          <span className="text-[11px] font-normal text-slate-500">Include country code</span>
+                        </label>
+                        <div className="relative">
+                          <Phone className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                          <input
+                            type="tel"
+                            required
+                            placeholder="+234 800 000 0000 or +1 555 123 4567"
+                            value={newStaffPhone}
+                            onChange={(e) => {
+                              setNewStaffPhone(e.target.value);
+                              if (createError) setCreateError(null);
+                            }}
+                            className={`w-full pl-10 pr-3.5 py-2.5 text-sm bg-white border rounded-xl font-mono focus:outline-none ${
+                              newStaffPhone.trim() && !phoneValidation.valid
+                                ? 'border-amber-300 focus:border-amber-500'
+                                : 'border-slate-200 focus:border-emerald-500'
+                            }`}
+                          />
+                        </div>
+
+                        {/* Real-time Phone Validation Indicator */}
+                        {newStaffPhone.trim() && (
+                          <div className="mt-1.5 text-[11px] flex items-center gap-1.5">
+                            {phoneValidation.valid ? (
+                              <span className="text-emerald-700 font-semibold flex items-center gap-1">
+                                <Check className="w-3.5 h-3.5 text-emerald-600" />
+                                <span>International E.164: {phoneValidation.formattedDisplay}</span>
+                              </span>
+                            ) : (
+                              <span className="text-amber-800 flex items-center gap-1">
+                                <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                                <span>{phoneValidation.error}</span>
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-600 mb-1">
+                          Email Address (Optional)
+                        </label>
+                        <input
+                          type="email"
+                          placeholder="e.g. employee@company.com"
+                          value={newStaffEmail}
+                          onChange={(e) => setNewStaffEmail(e.target.value)}
+                          className="w-full px-3.5 py-2 text-xs bg-white border border-slate-200 rounded-xl focus:outline-none focus:border-blue-500"
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {newStaffDeliveryMethod === 'email' && (
+                    <div className="space-y-3">
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-900 mb-1">
+                          Email Address *
+                        </label>
+                        <div className="relative">
+                          <Mail className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                          <input
+                            type="email"
+                            required
+                            placeholder="employee@company.com"
+                            value={newStaffEmail}
+                            onChange={(e) => {
+                              setNewStaffEmail(e.target.value);
+                              if (createError) setCreateError(null);
+                            }}
+                            className="w-full pl-10 pr-3.5 py-2.5 text-sm bg-white border border-slate-200 rounded-xl focus:outline-none focus:border-blue-500 font-medium"
+                          />
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-600 mb-1">
+                          Phone Number (Optional)
+                        </label>
+                        <input
+                          type="tel"
+                          placeholder="+234 800 000 0000"
+                          value={newStaffPhone}
+                          onChange={(e) => setNewStaffPhone(e.target.value)}
+                          className="w-full px-3.5 py-2 text-xs bg-white border border-slate-200 rounded-xl focus:outline-none focus:border-blue-500"
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {newStaffDeliveryMethod === 'copy_link' && (
+                    <div className="space-y-3">
+                      <div className="p-2.5 rounded-xl bg-indigo-50/70 border border-indigo-200/80 text-xs text-indigo-950 flex items-start gap-2">
+                        <LinkIcon className="w-4 h-4 text-indigo-600 shrink-0 mt-0.5" />
+                        <div>
+                          <span className="font-bold">Direct Link Sharing Mode</span>
+                          <p className="text-[11px] text-indigo-800/90 mt-0.5">
+                            A unique, secure invitation token will be created and copied to your clipboard. You can paste and share it anywhere (SMS, WhatsApp, Slack, etc.).
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-600 mb-1">
+                            Email (Optional)
+                          </label>
+                          <input
+                            type="email"
+                            placeholder="employee@company.com"
+                            value={newStaffEmail}
+                            onChange={(e) => setNewStaffEmail(e.target.value)}
+                            className="w-full px-3.5 py-2 text-xs bg-white border border-slate-200 rounded-xl focus:outline-none focus:border-blue-500"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-600 mb-1">
+                            Phone (Optional)
+                          </label>
+                          <input
+                            type="tel"
+                            placeholder="+234 800 000 0000"
+                            value={newStaffPhone}
+                            onChange={(e) => setNewStaffPhone(e.target.value)}
+                            className="w-full px-3.5 py-2 text-xs bg-white border border-slate-200 rounded-xl focus:outline-none focus:border-blue-500"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* 4. Role Template Selector */}
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                    Select Role Template:
+                    Select Staff Role:
                   </label>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                     {Object.entries(ROLE_TEMPLATES).map(([key, tpl]) => {
@@ -885,7 +1241,11 @@ export const StaffView: React.FC<StaffViewProps> = ({ onOpenInvitationToken }) =
                   </button>
                   <button
                     type="button"
-                    disabled={!newStaffName.trim() || !newStaffEmail.trim()}
+                    disabled={
+                      !newStaffName.trim() ||
+                      (newStaffDeliveryMethod === 'whatsapp' && (!newStaffPhone.trim() || !phoneValidation.valid)) ||
+                      (newStaffDeliveryMethod === 'email' && (!newStaffEmail.trim() || !newStaffEmail.includes('@')))
+                    }
                     onClick={() => setAddStep('permissions')}
                     className="px-5 py-2.5 text-xs font-bold text-white bg-blue-600 hover:bg-blue-500 rounded-xl transition disabled:opacity-50 flex items-center gap-1 cursor-pointer"
                   >
@@ -995,7 +1355,13 @@ export const StaffView: React.FC<StaffViewProps> = ({ onOpenInvitationToken }) =
                   <div className="flex items-center justify-between">
                     <div>
                       <h4 className="text-base font-bold">{newStaffName}</h4>
-                      <p className="text-xs text-slate-400 font-mono">{newStaffEmail}</p>
+                      <p className="text-xs text-slate-400 font-mono">
+                        {newStaffDeliveryMethod === 'whatsapp'
+                          ? `WhatsApp: ${phoneValidation.formattedDisplay || newStaffPhone}`
+                          : newStaffDeliveryMethod === 'email'
+                          ? `Email: ${newStaffEmail}`
+                          : 'Direct Link Delivery'}
+                      </p>
                     </div>
                     <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-purple-500/20 text-purple-300 border border-purple-500/30 capitalize">
                       {formatRoleName(newStaffRole)}
@@ -1005,6 +1371,64 @@ export const StaffView: React.FC<StaffViewProps> = ({ onOpenInvitationToken }) =
                     Assigned Store: <strong className="text-white">{currentStore?.name}</strong>
                   </div>
                 </div>
+
+                {/* Delivery Method Summary Banner */}
+                {newStaffDeliveryMethod === 'whatsapp' && (
+                  <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-950 flex items-center justify-between">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-8 h-8 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
+                        <WhatsAppIcon className="w-4 h-4 text-emerald-600" />
+                      </div>
+                      <div>
+                        <span className="font-bold text-emerald-900">Delivery: Send via WhatsApp</span>
+                        <p className="text-[11px] text-emerald-800 mt-0.5">
+                          Opens WhatsApp DM to <strong>{phoneValidation.formattedDisplay}</strong> with pre-filled invitation message
+                        </p>
+                      </div>
+                    </div>
+                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-emerald-200 text-emerald-900 shrink-0">
+                      WhatsApp
+                    </span>
+                  </div>
+                )}
+
+                {newStaffDeliveryMethod === 'email' && (
+                  <div className="p-3.5 rounded-2xl bg-blue-50 border border-blue-200 text-xs text-blue-950 flex items-center justify-between">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-8 h-8 rounded-xl bg-blue-100 text-blue-700 flex items-center justify-center shrink-0">
+                        <Mail className="w-4 h-4 text-blue-600" />
+                      </div>
+                      <div>
+                        <span className="font-bold text-blue-900">Delivery: Send via Email</span>
+                        <p className="text-[11px] text-blue-800 mt-0.5">
+                          Sends invitation email directly to <strong>{newStaffEmail}</strong> via SendLib
+                        </p>
+                      </div>
+                    </div>
+                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-blue-200 text-blue-900 shrink-0">
+                      Email
+                    </span>
+                  </div>
+                )}
+
+                {newStaffDeliveryMethod === 'copy_link' && (
+                  <div className="p-3.5 rounded-2xl bg-indigo-50 border border-indigo-200 text-xs text-indigo-950 flex items-center justify-between">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-8 h-8 rounded-xl bg-indigo-100 text-indigo-700 flex items-center justify-center shrink-0">
+                        <LinkIcon className="w-4 h-4 text-indigo-600" />
+                      </div>
+                      <div>
+                        <span className="font-bold text-indigo-900">Delivery: Copy Invitation Link</span>
+                        <p className="text-[11px] text-indigo-800 mt-0.5">
+                          Secure token will be created and copied to clipboard to share anywhere
+                        </p>
+                      </div>
+                    </div>
+                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-indigo-200 text-indigo-900 shrink-0">
+                      Copy Link
+                    </span>
+                  </div>
+                )}
 
                 {/* Access vs Restricted Summary */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
@@ -1060,21 +1484,57 @@ export const StaffView: React.FC<StaffViewProps> = ({ onOpenInvitationToken }) =
                   >
                     Adjust Permissions
                   </button>
-                  <button
-                    type="button"
-                    disabled={creatingLoading}
-                    onClick={handleCreateStaffSubmit}
-                    className="px-5 py-2.5 text-xs font-bold text-white bg-blue-600 hover:bg-blue-500 rounded-xl transition flex items-center gap-1.5 shadow-md shadow-blue-600/20 disabled:opacity-50 cursor-pointer"
-                  >
-                    {creatingLoading ? (
-                      <span>Sending Invitation...</span>
-                    ) : (
-                      <>
-                        <Send className="w-3.5 h-3.5" />
-                        <span>Create Staff &amp; Send Invitation</span>
-                      </>
-                    )}
-                  </button>
+
+                  {/* Submit Button dynamically branded by Delivery Method */}
+                  {newStaffDeliveryMethod === 'whatsapp' ? (
+                    <button
+                      type="button"
+                      disabled={creatingLoading}
+                      onClick={handleCreateStaffSubmit}
+                      className="px-5 py-2.5 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 rounded-xl transition flex items-center gap-2 shadow-md shadow-emerald-600/20 disabled:opacity-50 cursor-pointer"
+                    >
+                      {creatingLoading ? (
+                        <span>Preparing WhatsApp...</span>
+                      ) : (
+                        <>
+                          <WhatsAppIcon className="w-4 h-4 text-white" />
+                          <span>Send via WhatsApp</span>
+                        </>
+                      )}
+                    </button>
+                  ) : newStaffDeliveryMethod === 'email' ? (
+                    <button
+                      type="button"
+                      disabled={creatingLoading}
+                      onClick={handleCreateStaffSubmit}
+                      className="px-5 py-2.5 text-xs font-bold text-white bg-blue-600 hover:bg-blue-500 active:bg-blue-700 rounded-xl transition flex items-center gap-2 shadow-md shadow-blue-600/20 disabled:opacity-50 cursor-pointer"
+                    >
+                      {creatingLoading ? (
+                        <span>Dispatching Email...</span>
+                      ) : (
+                        <>
+                          <Send className="w-3.5 h-3.5" />
+                          <span>Send via Email</span>
+                        </>
+                      )}
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      disabled={creatingLoading}
+                      onClick={handleCreateStaffSubmit}
+                      className="px-5 py-2.5 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 rounded-xl transition flex items-center gap-2 shadow-md shadow-indigo-600/20 disabled:opacity-50 cursor-pointer"
+                    >
+                      {creatingLoading ? (
+                        <span>Generating Link...</span>
+                      ) : (
+                        <>
+                          <Copy className="w-3.5 h-3.5" />
+                          <span>Copy Invitation Link</span>
+                        </>
+                      )}
+                    </button>
+                  )}
                 </div>
               </div>
             )}
@@ -1083,48 +1543,128 @@ export const StaffView: React.FC<StaffViewProps> = ({ onOpenInvitationToken }) =
       )}
 
       {/* ======================================================== */}
-      {/* CONFIRMATION DIALOG (SECTION 21)                         */}
+      {/* CONFIRMATION DIALOG (SECTION 21 & MULTI-CHANNEL DELIVERY) */}
       {/* ======================================================== */}
       {invitationSuccess && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/70 backdrop-blur-xs">
-          <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 max-w-md w-full p-6 text-center animate-in zoom-in-95 duration-100">
+          <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 max-w-lg w-full p-6 text-center animate-in zoom-in-95 duration-100 max-h-[92vh] overflow-y-auto">
             <div className={`w-14 h-14 rounded-2xl flex items-center justify-center mx-auto mb-3 ${
-              invitationSuccess.emailSent ? 'bg-emerald-100 text-emerald-600' : 'bg-blue-100 text-blue-600'
+              invitationSuccess.deliveryMethod === 'whatsapp'
+                ? 'bg-emerald-100 text-emerald-600'
+                : invitationSuccess.deliveryMethod === 'email'
+                ? invitationSuccess.emailSent ? 'bg-blue-100 text-blue-600' : 'bg-amber-100 text-amber-600'
+                : 'bg-indigo-100 text-indigo-600'
             }`}>
-              <CheckCircle2 className="w-8 h-8" />
+              {invitationSuccess.deliveryMethod === 'whatsapp' ? (
+                <WhatsAppIcon className="w-8 h-8 text-emerald-600" />
+              ) : invitationSuccess.deliveryMethod === 'copy_link' ? (
+                <LinkIcon className="w-8 h-8 text-indigo-600" />
+              ) : (
+                <CheckCircle2 className="w-8 h-8 text-blue-600" />
+              )}
             </div>
 
             <h3 className="text-lg font-bold text-slate-900">
-              {invitationSuccess.emailSent ? '✓ Staff invitation dispatched' : '✓ Staff account created'}
+              {invitationSuccess.deliveryMethod === 'whatsapp'
+                ? '✓ Staff Account Created & WhatsApp Ready'
+                : invitationSuccess.deliveryMethod === 'email'
+                ? invitationSuccess.emailSent ? '✓ Staff Invitation Dispatched' : '✓ Staff Account Created'
+                : '✓ Staff Account Created & Link Copied'}
             </h3>
-            <div className="text-base font-bold text-slate-900 mt-2">{invitationSuccess.member.user_name}</div>
-            <div className="text-xs font-mono text-slate-500">{invitationSuccess.member.user_email}</div>
-
-            {/* Email Delivery Status Badge */}
-            <div className="mt-3 flex items-center justify-center">
-              {invitationSuccess.emailSent ? (
-                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                  Invitation Email Sent via SendLib
-                </span>
-              ) : (
-                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-amber-50 text-amber-800 border border-amber-200">
-                  <Mail className="w-3.5 h-3.5 text-amber-600" />
-                  Account Saved • Manual Link Ready
-                </span>
-              )}
+            <div className="text-base font-bold text-slate-900 mt-1">{invitationSuccess.member.user_name}</div>
+            <div className="text-xs font-mono text-slate-500">
+              {invitationSuccess.member.user_email || invitationSuccess.member.phone || 'Account Record'}
             </div>
+
+            {/* Delivery Method Specific Status & Action Panel */}
+            {invitationSuccess.deliveryMethod === 'whatsapp' && (
+              <div className="mt-4 p-4 rounded-2xl bg-emerald-50/80 border border-emerald-200 text-left space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <WhatsAppIcon className="w-4 h-4 text-emerald-600" />
+                    <span className="text-xs font-bold text-emerald-950">WhatsApp Invitation DM</span>
+                  </div>
+                  <span className="text-[11px] font-semibold text-emerald-700">Pre-filled Message</span>
+                </div>
+
+                <p className="text-xs text-emerald-900/90 leading-relaxed">
+                  The staff member&apos;s WhatsApp chat is ready with your pre-filled invitation. Tap below to open WhatsApp and press &quot;Send&quot;.
+                </p>
+
+                {/* Pre-filled Message Preview Box */}
+                {invitationSuccess.whatsappMessage && (
+                  <div className="p-3 bg-white rounded-xl border border-emerald-200 text-xs font-mono text-slate-800 whitespace-pre-wrap leading-relaxed shadow-2xs">
+                    {invitationSuccess.whatsappMessage}
+                  </div>
+                )}
+
+                {/* WhatsApp Action Buttons */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (invitationSuccess.whatsappMessage && invitationSuccess.member.phone) {
+                        const phoneVal = validateAndFormatWhatsAppPhone(invitationSuccess.member.phone);
+                        openWhatsAppChat(phoneVal.cleanNumber, invitationSuccess.whatsappMessage);
+                      }
+                    }}
+                    className="w-full py-2.5 px-3 bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
+                  >
+                    <WhatsAppIcon className="w-4 h-4 text-white" />
+                    <span>Open WhatsApp Chat</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (invitationSuccess.whatsappMessage) {
+                        handleCopyWhatsAppMessage(invitationSuccess.whatsappMessage);
+                      }
+                    }}
+                    className="w-full py-2.5 px-3 bg-white hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer"
+                  >
+                    <Copy className="w-3.5 h-3.5 text-emerald-700" />
+                    <span>{copiedWhatsAppMsg ? 'Copied Message!' : 'Copy Message Text'}</span>
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {invitationSuccess.deliveryMethod === 'email' && (
+              <div className="mt-4 p-3.5 rounded-2xl bg-blue-50/80 border border-blue-200 text-left space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Mail className="w-4 h-4 text-blue-600" />
+                    <span className="text-xs font-bold text-blue-950">SendLib Delivery Status</span>
+                  </div>
+                  <span className={`text-[11px] font-semibold ${invitationSuccess.emailSent ? 'text-emerald-700' : 'text-amber-800'}`}>
+                    {invitationSuccess.emailSent ? 'Delivered to SMTP' : 'Manual Link Ready'}
+                  </span>
+                </div>
+                <p className="text-xs text-blue-900/90 leading-relaxed">
+                  {invitationSuccess.emailSent
+                    ? `${invitationSuccess.member.user_name} has received an invitation email sent via SendLib with instructions to join.`
+                    : `Account created successfully! ${invitationSuccess.emailError ? `SendLib notice: ${invitationSuccess.emailError}. ` : ''}You can copy the invitation link below.`}
+                </p>
+              </div>
+            )}
+
+            {invitationSuccess.deliveryMethod === 'copy_link' && (
+              <div className="mt-4 p-3.5 rounded-2xl bg-indigo-50/80 border border-indigo-200 text-left space-y-2">
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-indigo-600" />
+                  <span className="text-xs font-bold text-indigo-950">Invitation Link Copied to Clipboard!</span>
+                </div>
+                <p className="text-xs text-indigo-900/90 leading-relaxed">
+                  The secure invitation link has been automatically copied. You can paste and share it directly with {invitationSuccess.member.user_name} on any platform.
+                </p>
+              </div>
+            )}
 
             <div className="mt-3 p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-700 flex justify-between">
               <span>Role: <strong className="capitalize">{formatRoleName(invitationSuccess.member.role)}</strong></span>
               <span>Store: <strong>{currentStore?.name}</strong></span>
             </div>
-
-            <p className="text-xs text-slate-500 mt-3 leading-relaxed">
-              {invitationSuccess.emailSent
-                ? `${invitationSuccess.member.user_name} has received an invitation email sent via SendLib with instructions to join.`
-                : `Account created successfully! ${invitationSuccess.emailError ? `SendLib notice: ${invitationSuccess.emailError}. ` : ''}You can share the invitation link directly below.`}
-            </p>
 
             {/* Quick Link Share & Copy */}
             <div className="mt-4 pt-3 border-t border-slate-100 text-left space-y-2">
@@ -1135,15 +1675,16 @@ export const StaffView: React.FC<StaffViewProps> = ({ onOpenInvitationToken }) =
                 <input
                   type="text"
                   readOnly
-                  value={`${typeof window !== 'undefined' ? window.location.origin : ''}/?invite=${invitationSuccess.invitation.token}`}
-                  className="w-full px-3 py-1.5 text-xs font-mono bg-slate-50 border border-slate-200 rounded-xl text-slate-700 select-all"
+                  value={`${typeof window !== 'undefined' ? window.location.origin : ''}/invite/${invitationSuccess.invitation.token}`}
+                  className="w-full px-3 py-2 text-xs font-mono bg-slate-50 border border-slate-200 rounded-xl text-slate-700 select-all"
                 />
                 <button
                   type="button"
                   onClick={() => handleCopyLink(invitationSuccess.invitation.token)}
-                  className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold shrink-0 transition cursor-pointer"
+                  className="px-3.5 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold shrink-0 transition flex items-center gap-1 cursor-pointer"
                 >
-                  {copiedLink ? 'Copied!' : 'Copy'}
+                  <Copy className="w-3.5 h-3.5" />
+                  <span>{copiedLink ? 'Copied!' : 'Copy Link'}</span>
                 </button>
               </div>
 
@@ -1157,7 +1698,7 @@ export const StaffView: React.FC<StaffViewProps> = ({ onOpenInvitationToken }) =
               </div>
             </div>
 
-            <div className="mt-6 flex items-center justify-between gap-2 pt-2 border-t border-slate-100">
+            <div className="mt-5 flex items-center justify-between gap-2 pt-2 border-t border-slate-100">
               <button
                 type="button"
                 onClick={() => setPreviewEmailInv(invitationSuccess.invitation)}
@@ -1170,10 +1711,233 @@ export const StaffView: React.FC<StaffViewProps> = ({ onOpenInvitationToken }) =
               <button
                 type="button"
                 onClick={() => setInvitationSuccess(null)}
-                className="px-5 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-500 rounded-xl transition cursor-pointer"
+                className="px-6 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-500 rounded-xl transition cursor-pointer"
               >
                 Done
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ======================================================== */}
+      {/* RESEND INVITATION MODAL                                  */}
+      {/* ======================================================== */}
+      {resendingInv && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/70 backdrop-blur-xs">
+          <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 max-w-lg w-full p-5 sm:p-6 text-slate-800 animate-in zoom-in-95 duration-100">
+            {/* Header */}
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <div className="w-9 h-9 rounded-xl bg-blue-100 text-blue-700 flex items-center justify-center">
+                  <Send className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-base text-slate-900">Resend Staff Invitation</h3>
+                  <p className="text-xs text-slate-500">
+                    Choose delivery channel to resend invitation link to {resendingInv.name}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setResendingInv(null)}
+                className="text-slate-400 hover:text-slate-600 p-1"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Error banner if any */}
+            {resendError && (
+              <div className="mt-3 p-3 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                <span>{resendError}</span>
+              </div>
+            )}
+
+            {/* Staff member summary */}
+            <div className="mt-4 p-3 bg-slate-50 rounded-2xl border border-slate-200 text-xs flex items-center justify-between">
+              <div>
+                <span className="font-bold text-slate-900 text-sm">{resendingInv.name}</span>
+                <p className="text-[11px] text-slate-500 mt-0.5">Role: <strong className="capitalize">{formatRoleName(resendingInv.role)}</strong></p>
+              </div>
+              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-amber-100 text-amber-900 border border-amber-200">
+                Pending
+              </span>
+            </div>
+
+            {/* Delivery Method Selector */}
+            <div className="mt-4 space-y-2">
+              <label className="block text-xs font-bold text-slate-900 tracking-tight">
+                How would you like to resend the invitation?
+              </label>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                {/* 1. WhatsApp */}
+                <div
+                  onClick={() => setResendDeliveryMethod('whatsapp')}
+                  className={`p-3 rounded-xl border-2 cursor-pointer transition text-left flex flex-col justify-between ${
+                    resendDeliveryMethod === 'whatsapp'
+                      ? 'border-emerald-500 bg-emerald-50/70 shadow-xs'
+                      : 'border-slate-200 bg-white hover:bg-slate-50'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <WhatsAppIcon className="w-4 h-4 text-emerald-600" />
+                    {resendDeliveryMethod === 'whatsapp' && (
+                      <span className="w-4 h-4 rounded-full bg-emerald-600 text-white flex items-center justify-center text-[10px] font-bold">✓</span>
+                    )}
+                  </div>
+                  <div className="font-bold text-xs text-slate-900 mt-2">WhatsApp</div>
+                  <div className="text-[10px] text-slate-500 mt-0.5">Open chat with pre-filled message</div>
+                </div>
+
+                {/* 2. Email */}
+                <div
+                  onClick={() => setResendDeliveryMethod('email')}
+                  className={`p-3 rounded-xl border-2 cursor-pointer transition text-left flex flex-col justify-between ${
+                    resendDeliveryMethod === 'email'
+                      ? 'border-blue-600 bg-blue-50/70 shadow-xs'
+                      : 'border-slate-200 bg-white hover:bg-slate-50'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <Mail className="w-4 h-4 text-blue-600" />
+                    {resendDeliveryMethod === 'email' && (
+                      <span className="w-4 h-4 rounded-full bg-blue-600 text-white flex items-center justify-center text-[10px] font-bold">✓</span>
+                    )}
+                  </div>
+                  <div className="font-bold text-xs text-slate-900 mt-2">Email</div>
+                  <div className="text-[10px] text-slate-500 mt-0.5">Send via SendLib</div>
+                </div>
+
+                {/* 3. Copy Link */}
+                <div
+                  onClick={() => setResendDeliveryMethod('copy_link')}
+                  className={`p-3 rounded-xl border-2 cursor-pointer transition text-left flex flex-col justify-between ${
+                    resendDeliveryMethod === 'copy_link'
+                      ? 'border-indigo-600 bg-indigo-50/70 shadow-xs'
+                      : 'border-slate-200 bg-white hover:bg-slate-50'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <LinkIcon className="w-4 h-4 text-indigo-600" />
+                    {resendDeliveryMethod === 'copy_link' && (
+                      <span className="w-4 h-4 rounded-full bg-indigo-600 text-white flex items-center justify-center text-[10px] font-bold">✓</span>
+                    )}
+                  </div>
+                  <div className="font-bold text-xs text-slate-900 mt-2">Copy Link</div>
+                  <div className="text-[10px] text-slate-500 mt-0.5">Copy link to clipboard</div>
+                </div>
+              </div>
+            </div>
+
+            {/* Dynamic Inputs for Resending */}
+            <div className="mt-3.5 p-3.5 bg-slate-50 rounded-2xl border border-slate-200 space-y-2.5">
+              {resendDeliveryMethod === 'whatsapp' && (
+                <div>
+                  <label className="block text-xs font-semibold text-slate-800 mb-1 flex items-center justify-between">
+                    <span>WhatsApp Phone Number *</span>
+                    <span className="text-[11px] font-normal text-slate-500">Include country code</span>
+                  </label>
+                  <div className="relative">
+                    <Phone className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="tel"
+                      required
+                      placeholder="+234 800 000 0000 or +1 555 123 4567"
+                      value={resendPhone}
+                      onChange={(e) => setResendPhone(e.target.value)}
+                      className="w-full pl-9 pr-3 py-2 text-xs bg-white border border-slate-200 rounded-xl font-mono focus:outline-none focus:border-emerald-500"
+                    />
+                  </div>
+                  {resendPhone.trim() && (
+                    <div className="mt-1 text-[11px]">
+                      {resendPhoneValidation.valid ? (
+                        <span className="text-emerald-700 font-semibold flex items-center gap-1">
+                          <Check className="w-3 h-3 text-emerald-600" />
+                          <span>International: {resendPhoneValidation.formattedDisplay}</span>
+                        </span>
+                      ) : (
+                        <span className="text-amber-800 flex items-center gap-1">
+                          <AlertTriangle className="w-3 h-3 text-amber-600 shrink-0" />
+                          <span>{resendPhoneValidation.error}</span>
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {resendDeliveryMethod === 'email' && (
+                <div>
+                  <label className="block text-xs font-semibold text-slate-800 mb-1">
+                    Recipient Email Address *
+                  </label>
+                  <div className="relative">
+                    <Mail className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="email"
+                      required
+                      placeholder="employee@company.com"
+                      value={resendEmail}
+                      onChange={(e) => setResendEmail(e.target.value)}
+                      className="w-full pl-9 pr-3 py-2 text-xs bg-white border border-slate-200 rounded-xl focus:outline-none focus:border-blue-500"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {resendDeliveryMethod === 'copy_link' && (
+                <div className="text-xs text-indigo-900 flex items-center gap-2">
+                  <LinkIcon className="w-4 h-4 text-indigo-600 shrink-0" />
+                  <span>The 7-day expiration timer will be renewed and the fresh invitation link will be copied directly to your clipboard.</span>
+                </div>
+              )}
+            </div>
+
+            {/* Actions */}
+            <div className="mt-5 flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setResendingInv(null)}
+                className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl transition cursor-pointer"
+              >
+                Cancel
+              </button>
+
+              {resendDeliveryMethod === 'whatsapp' ? (
+                <button
+                  type="button"
+                  disabled={resendingLoading || !resendPhone.trim() || !resendPhoneValidation.valid}
+                  onClick={handleExecuteResend}
+                  className="px-5 py-2 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-500 rounded-xl transition flex items-center gap-1.5 shadow-md shadow-emerald-600/20 disabled:opacity-50 cursor-pointer"
+                >
+                  <WhatsAppIcon className="w-4 h-4 text-white" />
+                  <span>{resendingLoading ? 'Opening...' : 'Resend via WhatsApp'}</span>
+                </button>
+              ) : resendDeliveryMethod === 'email' ? (
+                <button
+                  type="button"
+                  disabled={resendingLoading || !resendEmail.trim() || !resendEmail.includes('@')}
+                  onClick={handleExecuteResend}
+                  className="px-5 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-500 rounded-xl transition flex items-center gap-1.5 shadow-md shadow-blue-600/20 disabled:opacity-50 cursor-pointer"
+                >
+                  <Send className="w-3.5 h-3.5" />
+                  <span>{resendingLoading ? 'Dispatching...' : 'Resend via Email'}</span>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  disabled={resendingLoading}
+                  onClick={handleExecuteResend}
+                  className="px-5 py-2 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-500 rounded-xl transition flex items-center gap-1.5 shadow-md shadow-indigo-600/20 disabled:opacity-50 cursor-pointer"
+                >
+                  <Copy className="w-3.5 h-3.5" />
+                  <span>{resendingLoading ? 'Copying...' : 'Copy Invitation Link'}</span>
+                </button>
+              )}
             </div>
           </div>
         </div>

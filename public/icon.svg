@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="swGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#2563EB" />
+      <stop offset="50%" stop-color="#1D4ED8" />
+      <stop offset="100%" stop-color="#0F172A" />
+    </linearGradient>
+    <linearGradient id="accentGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#60A5FA" />
+      <stop offset="100%" stop-color="#3B82F6" />
+    </linearGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="130%" height="130%">
+      <feDropShadow dx="0" dy="16" stdDeviation="24" flood-color="#1D4ED8" flood-opacity="0.4" />
+    </filter>
+  </defs>
+
+  <!-- Background with rounded squircle -->
+  <rect width="512" height="512" rx="128" fill="url(#swGrad)" />
+
+  <!-- Subtle inner border -->
+  <rect x="8" y="8" width="496" height="496" rx="120" fill="none" stroke="#60A5FA" stroke-width="4" stroke-opacity="0.25" />
+
+  <!-- Iconic Store / Box Symbol -->
+  <g transform="translate(106, 106)" filter="url(#shadow)">
+    <!-- Store Roof / Canopy -->
+    <path d="M150 20 L280 90 L20 90 Z" fill="url(#accentGrad)" />
+    
+    <!-- Building Base -->
+    <rect x="36" y="90" width="228" height="180" rx="24" fill="#FFFFFF" />
+
+    <!-- Storefront Door / Arch -->
+    <path d="M120 270 V175 C120 158 133 145 150 145 C167 145 180 158 180 175 V270 Z" fill="#2563EB" />
+
+    <!-- Display Windows -->
+    <rect x="56" y="125" width="48" height="52" rx="10" fill="#DBEAFE" />
+    <rect x="196" y="125" width="48" height="52" rx="10" fill="#DBEAFE" />
+
+    <!-- Canopy Stripes Accent -->
+    <polygon points="120,40 150,90 180,90 150,40" fill="#1D4ED8" opacity="0.3" />
+    <polygon points="60,68 85,90 115,90 85,68" fill="#1D4ED8" opacity="0.3" />
+    <polygon points="240,68 215,90 185,90 215,68" fill="#1D4ED8" opacity="0.3" />
+  </g>
+
+  <!-- Brand Typography -->
+  <text x="256" y="440" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="44" font-weight="900" fill="#FFFFFF" text-anchor="middle" letter-spacing="4">
+    STOCKWISE
+  </text>
+</svg>

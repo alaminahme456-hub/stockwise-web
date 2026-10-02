@@ -438,7 +438,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setCustomerPayments((prev) => prev.filter((p) => p.id !== paymentId));
   };
 
-  // Helper to dispatch SendLib staff invitation email with automatic retry
+  // Helper to dispatch SendLib staff invitation email with automatic fallback and retry
   const dispatchStaffInviteEmail = async (payload: {
     to: string;
     staffName: string;
@@ -449,37 +449,72 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     expiresAt?: string;
     permissionsCount?: number;
   }): Promise<{ emailSent: boolean; emailError?: string }> => {
-    const fetchUrl = `${typeof window !== 'undefined' ? window.location.origin : ''}/api/staff-invite-email`;
-    const options = {
+    const currentOrigin = typeof window !== 'undefined' ? window.location.origin : '';
+    const BACKEND_URL = 'https://ais-dev-qqriv6vkqoqgygvf26dntv-906094325213.europe-west2.run.app';
+
+    // Build ordered list of candidate endpoints
+    const candidates: string[] = [];
+
+    // 1. If currently accessed via AI Studio preview/shared domain (ais-pre-), route directly to active dev backend (ais-dev-)
+    if (currentOrigin.includes('ais-pre-')) {
+      candidates.push(`${currentOrigin.replace('ais-pre-', 'ais-dev-')}/api/staff-invite-email`);
+    }
+
+    // 2. Relative API path (primary for same-origin dev server and local container)
+    candidates.push('/api/staff-invite-email');
+
+    // 3. Absolute URL on current origin
+    if (currentOrigin && !candidates.includes(`${currentOrigin}/api/staff-invite-email`)) {
+      candidates.push(`${currentOrigin}/api/staff-invite-email`);
+    }
+
+    // 4. Live backend service fallback
+    if (!candidates.includes(`${BACKEND_URL}/api/staff-invite-email`)) {
+      candidates.push(`${BACKEND_URL}/api/staff-invite-email`);
+    }
+
+    const options: RequestInit = {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      },
+      credentials: 'include',
       body: JSON.stringify(payload),
     };
 
-    try {
-      let response = await fetch(fetchUrl, options);
+    let lastError = 'Failed to dispatch staff invitation email.';
 
-      // If server is in a transient reload or warmup state, retry once after a short delay
-      if (response.status === 404 || response.status === 502 || response.status === 503) {
-        await new Promise((r) => setTimeout(r, 1200));
-        response = await fetch(fetchUrl, options);
+    for (const url of candidates) {
+      try {
+        let response = await fetch(url, options);
+
+        // If response is a 404, 405, 502, or 503 (e.g. preview domain or container warmup), continue to next candidate
+        if (response.status === 404 || response.status === 405 || response.status === 502 || response.status === 503) {
+          lastError = `Endpoint ${url} returned status ${response.status}`;
+          continue;
+        }
+
+        const emailData = await response.json().catch(() => ({}));
+
+        if (response.ok && emailData.success) {
+          return { emailSent: true };
+        }
+
+        if (emailData.error) {
+          return { emailSent: false, emailError: emailData.error };
+        }
+
+        lastError = `SendLib dispatch returned status ${response.status}`;
+      } catch (err: any) {
+        lastError = err?.message || 'Network error connecting to email service.';
       }
-
-      const emailData = await response.json().catch(() => ({}));
-      if (response.ok && emailData.success) {
-        return { emailSent: true };
-      }
-
-      return {
-        emailSent: false,
-        emailError: emailData.error || `SendLib dispatch returned status ${response.status}`,
-      };
-    } catch (err: any) {
-      return {
-        emailSent: false,
-        emailError: err?.message || 'Failed to dispatch staff invitation email.',
-      };
     }
+
+    return {
+      emailSent: false,
+      emailError: lastError,
+    };
   };
 
   // Staff Management Implementations

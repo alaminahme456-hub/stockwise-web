@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { useStore } from '../context/StoreContext';
 import { useAuth } from '../context/AuthContext';
+import { useToast } from '../context/ToastContext';
 import { formatCurrency, formatDate } from '../lib/utils';
 import { 
   TrendingUp, 
@@ -22,7 +23,14 @@ import {
   CheckCircle2, 
   Layers, 
   ArrowRight, 
-  Lock 
+  Lock,
+  Eye,
+  CreditCard,
+  Clock,
+  User,
+  Printer,
+  Copy,
+  FileText
 } from 'lucide-react';
 import { NavigationTab, Sale } from '../types';
 
@@ -40,6 +48,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onView
     isStoreOwner
   } = useStore();
   const { user } = useAuth();
+  const { showToast } = useToast();
 
   const canViewRevenue = isStoreOwner || hasPermission('financials.view_revenue');
   const canViewReports = isStoreOwner || hasPermission('reports.view');
@@ -55,6 +64,23 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onView
   const [subscriptionModalOpen, setSubscriptionModalOpen] = useState(false);
   const [subscriptionPlan, setSubscriptionPlan] = useState<'pro' | 'enterprise'>('pro');
   const [subscriptionFeedback, setSubscriptionFeedback] = useState<string | null>(null);
+
+  // Detail Modal for Recent Completed Sales
+  const [selectedSaleDetail, setSelectedSaleDetail] = useState<Sale | null>(null);
+  const [copiedReceiptId, setCopiedReceiptId] = useState(false);
+
+  const handleCopyReceiptId = (id: string) => {
+    try {
+      if (navigator?.clipboard?.writeText) {
+        navigator.clipboard.writeText(id);
+        setCopiedReceiptId(true);
+        showToast('✓ Receipt ID copied to clipboard', 'info');
+        setTimeout(() => setCopiedReceiptId(false), 2000);
+      }
+    } catch {
+      // fallback
+    }
+  };
 
   // Today's specific sales
   const todaySales = useMemo(() => {
@@ -444,82 +470,379 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onView
       </div>
 
       {/* ======================================================== */}
-      {/* 5. RECENT COMPLETED SALES TABLE                          */}
+      {/* 5. RECENT COMPLETED SALES (CLICKABLE LIST ITEMS)          */}
       {/* ======================================================== */}
       <div className="pt-2">
-        {/* Recent Transactions Table */}
         <div className="bg-white rounded-2xl border border-slate-200/90 shadow-xs overflow-hidden">
+          {/* Card Header */}
           <div className="p-4 sm:p-5 border-b border-slate-100 flex items-center justify-between">
             <div>
               <h4 className="text-sm sm:text-base font-bold text-slate-900">Recent Completed Sales</h4>
-              <p className="text-xs text-slate-500">Live database transactions</p>
+              <p className="text-xs text-slate-500">Live database transactions • Click any transaction to view full details</p>
             </div>
             <button
               type="button"
               onClick={() => onNavigate('transactions')}
-              className="text-xs font-semibold text-blue-600 hover:text-blue-700 flex items-center gap-1"
+              className="text-xs font-semibold text-blue-600 hover:text-blue-700 flex items-center gap-1 cursor-pointer"
             >
               <span>View All</span>
               <ArrowRight className="w-3.5 h-3.5" />
             </button>
           </div>
 
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm text-slate-600">
-              <thead className="bg-slate-50/80 text-[11px] uppercase text-slate-500 font-semibold border-b border-slate-100">
-                <tr>
-                  <th className="px-5 py-3">Receipt / ID</th>
-                  <th className="px-5 py-3">Customer</th>
-                  <th className="px-5 py-3">Payment</th>
-                  <th className="px-5 py-3">Date & Time</th>
-                  <th className="px-5 py-3 text-right">Total</th>
-                  <th className="px-5 py-3 text-center">Action</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 text-xs">
-                {sales.length === 0 ? (
-                  <tr>
-                    <td colSpan={6} className="px-5 py-8 text-center text-slate-400">
-                      No sales recorded yet. Click &quot;POS Sale&quot; to make your first transaction!
-                    </td>
-                  </tr>
-                ) : (
-                  sales.slice(0, 5).map((sale) => (
-                    <tr key={sale.id} className="hover:bg-slate-50/70 transition">
-                      <td className="px-5 py-3.5 font-medium text-slate-900 font-mono">
-                        #{sale.id.slice(0, 8)}
-                      </td>
-                      <td className="px-5 py-3.5 text-slate-800">
-                        {sale.customer_name || <span className="text-slate-400">Walk-in Customer</span>}
-                      </td>
-                      <td className="px-5 py-3.5 capitalize">
-                        <span className="px-2 py-0.5 rounded-full font-medium bg-slate-100 text-slate-700">
-                          {sale.payment_method.replace('_', ' ')}
+          {/* Clickable List Items (Replaces horizontal scrolling table) */}
+          <div className="divide-y divide-slate-100">
+            {sales.length === 0 ? (
+              <div className="px-5 py-12 text-center text-slate-400">
+                <div className="w-12 h-12 rounded-2xl bg-slate-50 border border-slate-200 flex items-center justify-center mx-auto mb-3 text-slate-400">
+                  <Receipt className="w-6 h-6" />
+                </div>
+                <p className="font-semibold text-slate-700 text-sm">No sales recorded yet</p>
+                <p className="text-xs text-slate-400 mt-1">Click &quot;POS Sale&quot; to make your first transaction!</p>
+              </div>
+            ) : (
+              sales.slice(0, 6).map((sale) => {
+                const itemsCount = (sale.items || []).reduce((acc, item) => acc + Number(item.quantity), 0);
+                const totalCount = itemsCount > 0 ? itemsCount : (sale.items?.length || 1);
+
+                return (
+                  <div
+                    key={sale.id}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => {
+                      setSelectedSaleDetail(sale);
+                      if (onViewSaleDetail) onViewSaleDetail(sale);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        setSelectedSaleDetail(sale);
+                        if (onViewSaleDetail) onViewSaleDetail(sale);
+                      }
+                    }}
+                    className="p-4 sm:px-5 hover:bg-slate-50/90 active:bg-slate-100/70 transition cursor-pointer flex flex-col sm:flex-row sm:items-center justify-between gap-3 group focus:outline-none focus:bg-slate-50"
+                    title="Click to view complete sale breakdown"
+                  >
+                    {/* Left: Receipt / ID, Customer, Payment, Date & Time */}
+                    <div className="flex-1 min-w-0">
+                      {/* Primary Line */}
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-mono font-bold text-slate-900 group-hover:text-blue-600 transition text-sm sm:text-base">
+                          #{sale.id.slice(0, 8)}
                         </span>
-                      </td>
-                      <td className="px-5 py-3.5 text-slate-500">
-                        {formatDate(sale.created_at)}
-                      </td>
-                      <td className="px-5 py-3.5 text-right font-semibold text-slate-900">
-                        {formatCurrency(sale.total_amount, currency)}
-                      </td>
-                      <td className="px-5 py-3.5 text-center">
-                        <button
-                          type="button"
-                          onClick={() => onViewSaleDetail ? onViewSaleDetail(sale) : onNavigate('transactions')}
-                          className="text-xs text-blue-600 hover:text-blue-800 font-semibold px-2 py-1 rounded hover:bg-blue-50 transition"
-                        >
-                          Receipt
-                        </button>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
+                        <span className="text-slate-300 hidden sm:inline" aria-hidden="true">•</span>
+                        <span className="font-semibold text-slate-800 text-sm flex items-center gap-1.5 truncate max-w-[200px] sm:max-w-none">
+                          <User className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                          <span className="truncate">{sale.customer_name || 'Walk-in Customer'}</span>
+                        </span>
+                        {sale.payment_method === 'credit' ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-100 text-amber-900 border border-amber-200">
+                            <CreditCard className="w-3 h-3 text-amber-700" />
+                            Credit (Pay Later)
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-medium capitalize bg-slate-100 text-slate-700 border border-slate-200/80">
+                            <CreditCard className="w-3 h-3 text-slate-500" />
+                            {sale.payment_method.replace('_', ' ')}
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Secondary Line: Date & Time, Staff / Cashier, Items Count */}
+                      <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs text-slate-500 mt-1.5">
+                        <span className="flex items-center gap-1 text-slate-600 font-medium">
+                          <Clock className="w-3 h-3 text-slate-400 shrink-0" />
+                          {formatDate(sale.created_at)}
+                        </span>
+                        <span aria-hidden="true" className="text-slate-300">·</span>
+                        <span>Staff: <strong className="text-slate-700 font-medium">{sale.staff_name || 'Cashier'}</strong></span>
+                        <span aria-hidden="true" className="text-slate-300">·</span>
+                        <span>{totalCount} {totalCount === 1 ? 'item' : 'items'}</span>
+                        {sale.payment_method === 'credit' && sale.amount_paid !== undefined && sale.amount_paid > 0 && (
+                          <>
+                            <span aria-hidden="true" className="text-slate-300">·</span>
+                            <span className="text-emerald-700 font-medium">
+                              Upfront: {formatCurrency(sale.amount_paid, currency)}
+                            </span>
+                          </>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Right: Total & Action */}
+                    <div className="flex items-center justify-between sm:justify-end gap-4 shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-100">
+                      <div className="text-left sm:text-right">
+                        <div className="font-bold text-slate-900 font-mono text-base sm:text-lg tracking-tight">
+                          {formatCurrency(sale.total_amount, currency)}
+                        </div>
+                        <div className={`text-[11px] font-semibold ${sale.payment_method === 'credit' ? 'text-amber-700' : 'text-emerald-600'}`}>
+                          {sale.payment_method === 'credit' ? 'Credit Sale' : 'Completed'}
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedSaleDetail(sale);
+                          if (onViewSaleDetail) onViewSaleDetail(sale);
+                        }}
+                        className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-semibold text-blue-700 bg-blue-50 group-hover:bg-blue-600 group-hover:text-white transition shadow-2xs cursor-pointer"
+                        title="View Sale Details"
+                      >
+                        <Eye className="w-3.5 h-3.5" />
+                        <span>View</span>
+                        <ChevronRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })
+            )}
           </div>
         </div>
       </div>
+
+      {/* ======================================================== */}
+      {/* 5B. SALE DETAIL MODAL VIEW                               */}
+      {/* ======================================================== */}
+      {selectedSaleDetail && (
+        <div 
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xs overflow-y-auto animate-in fade-in duration-150"
+          onClick={() => setSelectedSaleDetail(null)}
+        >
+          <div 
+            className="bg-white rounded-3xl shadow-2xl border border-slate-200 max-w-lg w-full overflow-hidden my-8 animate-in zoom-in-95 duration-150"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div className="p-5 sm:p-6 bg-slate-900 text-white flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-blue-500/20 border border-blue-400/30 text-blue-400 flex items-center justify-center shadow-inner">
+                  <Receipt className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base sm:text-lg font-bold">Receipt &amp; Sale Details</h3>
+                  <p className="text-xs text-slate-300 font-mono">
+                    Receipt #{selectedSaleDetail.id.slice(0, 8)}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedSaleDetail(null)}
+                className="text-slate-400 hover:text-white p-1.5 rounded-xl hover:bg-white/10 transition cursor-pointer"
+                title="Close modal"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-5 sm:p-6 space-y-4 max-h-[75vh] overflow-y-auto text-slate-800 text-xs">
+              {/* Key Attributes Overview */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                {/* Receipt / ID */}
+                <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/80">
+                  <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Receipt / ID</div>
+                  <div className="flex items-center justify-between mt-1">
+                    <span className="font-mono font-bold text-slate-900 text-sm">
+                      #{selectedSaleDetail.id.slice(0, 8)}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => handleCopyReceiptId(selectedSaleDetail.id)}
+                      className="inline-flex items-center gap-1 text-[11px] text-blue-600 hover:text-blue-800 font-semibold px-2 py-0.5 rounded-lg hover:bg-blue-50 transition cursor-pointer"
+                      title="Copy full UUID"
+                    >
+                      <Copy className="w-3 h-3" />
+                      <span>{copiedReceiptId ? 'Copied!' : 'Copy'}</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Customer */}
+                <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/80">
+                  <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Customer</div>
+                  <div className="font-semibold text-slate-900 text-sm mt-1 flex items-center gap-1.5 truncate">
+                    <User className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                    <span className="truncate">{selectedSaleDetail.customer_name || 'Walk-in Customer'}</span>
+                  </div>
+                </div>
+
+                {/* Payment Method */}
+                <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/80">
+                  <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Payment</div>
+                  <div className="mt-1 flex items-center gap-1.5">
+                    <CreditCard className="w-3.5 h-3.5 text-slate-400" />
+                    <span className="font-bold capitalize text-slate-900">
+                      {selectedSaleDetail.payment_method.replace('_', ' ')}
+                    </span>
+                    <span className={`ml-auto px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                      selectedSaleDetail.payment_method === 'credit'
+                        ? 'bg-amber-100 text-amber-900'
+                        : 'bg-emerald-100 text-emerald-800'
+                    }`}>
+                      {selectedSaleDetail.payment_method === 'credit' ? 'Credit' : 'Completed'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Date & Time */}
+                <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/80">
+                  <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Date &amp; Time</div>
+                  <div className="font-medium text-slate-900 text-xs mt-1 flex items-center gap-1.5">
+                    <Clock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                    <span>{formatDate(selectedSaleDetail.created_at)}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Staff / Cashier */}
+              <div className="flex items-center justify-between px-3 py-2 bg-slate-50 rounded-xl border border-slate-200/80 text-xs">
+                <span className="text-slate-500 font-medium">Processed By Cashier:</span>
+                <span className="font-semibold text-slate-900">{selectedSaleDetail.staff_name || 'Cashier'}</span>
+              </div>
+
+              {/* Line Items Breakdown */}
+              <div className="space-y-2 pt-1">
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-500 font-semibold uppercase tracking-wider text-[11px]">
+                    Purchased Items ({(selectedSaleDetail.items || []).length})
+                  </span>
+                  <span className="text-slate-400 text-[11px]">Subtotal</span>
+                </div>
+                <div className="bg-slate-50 rounded-2xl p-3 border border-slate-200 space-y-2">
+                  {(selectedSaleDetail.items || []).length === 0 ? (
+                    <div className="text-slate-400 italic text-center py-2">No itemized line items recorded</div>
+                  ) : (
+                    (selectedSaleDetail.items || []).map((item, idx) => (
+                      <div key={idx} className="flex items-start justify-between gap-2 pb-2 border-b border-slate-200/70 last:border-b-0 last:pb-0">
+                        <div className="min-w-0 flex-1">
+                          <div className="font-semibold text-slate-800 text-xs truncate">
+                            {item.product_name}
+                          </div>
+                          <div className="text-[11px] text-slate-500 font-mono">
+                            {item.quantity} × {formatCurrency(item.unit_price, currency)}
+                            {item.sku ? ` • SKU: ${item.sku}` : ''}
+                          </div>
+                        </div>
+                        <div className="font-bold text-slate-900 text-xs font-mono shrink-0">
+                          {formatCurrency(item.subtotal, currency)}
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+
+              {/* Financial Totals */}
+              <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-200 space-y-1.5">
+                <div className="flex justify-between text-slate-600">
+                  <span>Subtotal:</span>
+                  <span className="font-mono">{formatCurrency(selectedSaleDetail.subtotal, currency)}</span>
+                </div>
+                {Number(selectedSaleDetail.discount) > 0 && (
+                  <div className="flex justify-between text-emerald-600">
+                    <span>Discount:</span>
+                    <span className="font-mono">-{formatCurrency(selectedSaleDetail.discount || 0, currency)}</span>
+                  </div>
+                )}
+                {Number(selectedSaleDetail.tax) > 0 && (
+                  <div className="flex justify-between text-slate-600">
+                    <span>Tax:</span>
+                    <span className="font-mono">{formatCurrency(selectedSaleDetail.tax || 0, currency)}</span>
+                  </div>
+                )}
+                <div className="flex justify-between items-center text-sm font-bold text-slate-900 pt-2 border-t border-slate-200">
+                  <span className="text-xs uppercase tracking-wider text-slate-600">
+                    {selectedSaleDetail.payment_method === 'credit' ? 'Total Sale:' : 'Total Paid:'}
+                  </span>
+                  <span className="text-base text-blue-600 font-mono">
+                    {formatCurrency(selectedSaleDetail.total_amount, currency)}
+                  </span>
+                </div>
+
+                {/* Credit sale specific breakdown */}
+                {selectedSaleDetail.payment_method === 'credit' && (
+                  <div className="mt-2.5 pt-2 border-t border-dashed border-amber-300 text-xs space-y-1">
+                    <div className="flex justify-between text-slate-600">
+                      <span>Upfront Paid at Checkout:</span>
+                      <span className="font-semibold text-emerald-700 font-mono">
+                        {formatCurrency(selectedSaleDetail.amount_paid || 0, currency)}
+                      </span>
+                    </div>
+                    <div className="flex justify-between font-bold text-amber-950 pt-1">
+                      <span>Outstanding Debt Added to Account:</span>
+                      <span className="font-mono text-amber-900">
+                        {formatCurrency(
+                          selectedSaleDetail.balance_due ??
+                            Math.max(0, selectedSaleDetail.total_amount - (selectedSaleDetail.amount_paid || 0)),
+                          currency
+                        )}
+                      </span>
+                    </div>
+                    {selectedSaleDetail.due_date && (
+                      <div className="flex justify-between text-[11px] text-slate-500 pt-0.5">
+                        <span>Promised Repayment Date:</span>
+                        <span>{formatDate(selectedSaleDetail.due_date)}</span>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Cash sale specific breakdown */}
+                {selectedSaleDetail.payment_method === 'cash' && selectedSaleDetail.amount_tendered !== undefined && (
+                  <div className="mt-2.5 pt-2 border-t border-dashed border-slate-200 text-xs space-y-1">
+                    <div className="flex justify-between text-slate-600">
+                      <span>Cash Tendered:</span>
+                      <span className="font-mono">{formatCurrency(selectedSaleDetail.amount_tendered, currency)}</span>
+                    </div>
+                    <div className="flex justify-between font-bold text-emerald-700">
+                      <span>Change Returned:</span>
+                      <span className="font-mono">{formatCurrency(selectedSaleDetail.change_due || 0, currency)}</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Modal Actions Footer */}
+            <div className="p-4 sm:p-5 bg-slate-50 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2.5">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => window.print()}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold rounded-xl border border-slate-200 bg-white hover:bg-slate-100 text-slate-700 transition cursor-pointer shadow-2xs"
+                >
+                  <Printer className="w-4 h-4" />
+                  <span>Print Receipt</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedSaleDetail(null);
+                    onNavigate('transactions');
+                  }}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold rounded-xl border border-blue-200 bg-blue-50 hover:bg-blue-100 text-blue-700 transition cursor-pointer"
+                >
+                  <FileText className="w-4 h-4" />
+                  <span>View in Ledger</span>
+                </button>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setSelectedSaleDetail(null)}
+                className="px-4 py-2 text-xs font-semibold rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-800 transition cursor-pointer"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ======================================================== */}
       {/* 6. SUBSCRIPTION MODAL DIALOG                             */}

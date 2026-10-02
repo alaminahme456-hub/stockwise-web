@@ -3,12 +3,10 @@ import { useStore } from '../context/StoreContext';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import { updateStore, updateStoreSettings, createStore } from '../lib/db';
-import { getSupabaseCredentials } from '../lib/supabase';
 import { 
   Store as StoreIcon, 
   Settings as SettingsIcon, 
   Receipt, 
-  Database, 
   Plus, 
   Check, 
   Save, 
@@ -17,11 +15,6 @@ import {
   CheckCircle2,
   ArrowRight,
   Sparkles,
-  Mail,
-  Send,
-  Key,
-  ShieldCheck,
-  RefreshCw,
   Smartphone,
   Download,
   ExternalLink,
@@ -73,13 +66,6 @@ export const SettingsView: React.FC = () => {
     showToast('To install StockWise, look for the install icon in your browser address bar or menu.', 'info');
   };
 
-  // SendLib email integration state
-  const [sendlibStatus, setSendlibStatus] = useState<{ configured: boolean; service: string; endpoint: string } | null>(null);
-  const [sendlibChecking, setSendlibChecking] = useState(false);
-  const [testEmailAddress, setTestEmailAddress] = useState(user?.email || '');
-  const [sendingTestEmail, setSendingTestEmail] = useState(false);
-  const [testEmailResult, setTestEmailResult] = useState<{ success: boolean; message?: string; error?: string } | null>(null);
-
   // Store profile form
   const [storeForm, setStoreForm] = useState({
     name: currentStore?.name || '',
@@ -130,70 +116,6 @@ export const SettingsView: React.FC = () => {
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [switchSuccessMessage, setSwitchSuccessMessage] = useState<string | null>(null);
-
-  const { url: supabaseUrl } = getSupabaseCredentials();
-
-  // Check SendLib Server status
-  const checkSendlib = async () => {
-    setSendlibChecking(true);
-    try {
-      const res = await fetch('/api/sendlib/status');
-      if (res.ok) {
-        const data = await res.json();
-        setSendlibStatus(data);
-      }
-    } catch (err) {
-      console.warn('Could not check Sendlib status:', err);
-    } finally {
-      setSendlibChecking(false);
-    }
-  };
-
-  useEffect(() => {
-    checkSendlib();
-  }, []);
-
-  const handleSendTestEmail = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!testEmailAddress.trim() || !testEmailAddress.includes('@')) {
-      showToast('Please provide a valid recipient email address', 'error');
-      return;
-    }
-
-    setSendingTestEmail(true);
-    setTestEmailResult(null);
-
-    try {
-      const response = await fetch('/api/test-email', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ to: testEmailAddress.trim() }),
-      });
-
-      const data = await response.json().catch(() => ({}));
-      if (response.ok && data.success) {
-        setTestEmailResult({
-          success: true,
-          message: data.message || `Test email successfully dispatched to ${testEmailAddress.trim()}`,
-        });
-        showToast(`✓ Test email sent via SendLib to ${testEmailAddress.trim()}`, 'success');
-      } else {
-        setTestEmailResult({
-          success: false,
-          error: data.error || `SendLib dispatch returned status ${response.status}`,
-        });
-        showToast(data.error || 'Failed to dispatch test email', 'error');
-      }
-    } catch (err: any) {
-      setTestEmailResult({
-        success: false,
-        error: err?.message || 'Network error while contacting backend.',
-      });
-      showToast('Network error while dispatching test email', 'error');
-    } finally {
-      setSendingTestEmail(false);
-    }
-  };
 
   // Switch between stores logic
   const handleSwitchStore = (selectedStore: Store) => {
@@ -584,153 +506,6 @@ export const SettingsView: React.FC = () => {
           </button>
         </div>
       </form>
-
-      {/* Database Connection & Schema Information */}
-      <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-xs space-y-3">
-        <div className="flex items-center gap-2.5 pb-2 border-b border-slate-100">
-          <Database className="w-5 h-5 text-blue-600" />
-          <h3 className="font-bold text-slate-900 text-base">PostgreSQL Single Source of Truth</h3>
-        </div>
-
-        <p className="text-xs text-slate-600 leading-relaxed">
-          ALTECH StockWise is connected directly to your PostgreSQL database hosted on Supabase.
-          All data modifications (products, sales, inventory deductions, staff accounts) are strictly persisted to the database and synced across multiple browsers using PostgreSQL Realtime changes.
-        </p>
-
-        <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-xs font-mono text-slate-700 flex items-center justify-between">
-          <div className="truncate">
-            <span className="text-slate-400">Host URL: </span>
-            <span>{supabaseUrl || 'https://eca66e4c-ee5d-49ef-af91-320a781a1f01.supabase.co'}</span>
-          </div>
-          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
-            Realtime Active
-          </span>
-        </div>
-      </div>
-
-      {/* SendLib Email Service & Delivery */}
-      <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-xs space-y-4">
-        <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center">
-              <Mail className="w-4 h-4" />
-            </div>
-            <div>
-              <h3 className="font-bold text-slate-900 text-base">SendLib Email Delivery Service</h3>
-              <p className="text-xs text-slate-500">
-                Server-side transactional email service for staff invitations and store alerts
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2">
-            {sendlibChecking ? (
-              <span className="text-xs text-slate-400 flex items-center gap-1">
-                <RefreshCw className="w-3 h-3 animate-spin" />
-                Checking...
-              </span>
-            ) : sendlibStatus?.configured ? (
-              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                SendLib Connected
-              </span>
-            ) : (
-              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-50 text-amber-800 border border-amber-200">
-                <AlertCircle className="w-3.5 h-3.5 text-amber-600" />
-                SENDLIB_API_KEY Required
-              </span>
-            )}
-          </div>
-        </div>
-
-        {/* Security and Endpoint Info */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-xs">
-            <div className="text-slate-400 font-medium">Service Endpoint</div>
-            <div className="font-mono text-slate-800 font-semibold mt-0.5 truncate">
-              {sendlibStatus?.endpoint || 'https://sendlib.samueltuoyo.com/api/send'}
-            </div>
-          </div>
-          <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-xs">
-            <div className="text-slate-400 font-medium">Key Storage Location</div>
-            <div className="flex items-center gap-1.5 font-mono text-emerald-700 font-semibold mt-0.5">
-              <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-              <span>Server-Only (process.env.SENDLIB_API_KEY)</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Test Email Dispatch Form */}
-        <div className="p-4 rounded-xl bg-indigo-50/60 border border-indigo-100 space-y-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-1.5">
-              <Send className="w-4 h-4 text-indigo-600" />
-              <span className="text-xs font-bold text-indigo-950">SendLib Delivery Verification Test</span>
-            </div>
-            <span className="text-[11px] text-indigo-700 font-medium">Verified Server Route</span>
-          </div>
-          <p className="text-xs text-indigo-900/80 leading-relaxed">
-            Test your SendLib authentication and email delivery pipeline. A verification email will be securely dispatched through your server without exposing credentials.
-          </p>
-
-          <form onSubmit={handleSendTestEmail} className="flex flex-col sm:flex-row items-stretch gap-2 pt-1">
-            <input
-              type="email"
-              required
-              placeholder="Enter your recipient email address"
-              value={testEmailAddress}
-              onChange={(e) => setTestEmailAddress(e.target.value)}
-              className="flex-1 px-3.5 py-2 text-xs bg-white border border-indigo-200 rounded-xl focus:outline-none focus:border-indigo-500 shadow-xs"
-            />
-            <button
-              type="submit"
-              disabled={sendingTestEmail}
-              className="inline-flex items-center justify-center gap-1.5 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold transition shadow-xs disabled:opacity-50 cursor-pointer shrink-0"
-            >
-              {sendingTestEmail ? (
-                <>
-                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                  <span>Dispatching...</span>
-                </>
-              ) : (
-                <>
-                  <Send className="w-3.5 h-3.5" />
-                  <span>Send Test Email</span>
-                </>
-              )}
-            </button>
-          </form>
-
-          {testEmailResult && (
-            <div
-              className={`p-3 rounded-xl text-xs flex items-start gap-2 animate-in fade-in duration-150 ${
-                testEmailResult.success
-                  ? 'bg-emerald-100/70 border border-emerald-300 text-emerald-900'
-                  : 'bg-red-100/70 border border-red-300 text-red-900'
-              }`}
-            >
-              {testEmailResult.success ? (
-                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
-              ) : (
-                <AlertCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
-              )}
-              <div className="flex-1">
-                <div className="font-bold">
-                  {testEmailResult.success ? 'Delivery Confirmed by SendLib' : 'Delivery Attempt Failed'}
-                </div>
-                <div className="mt-0.5 text-[11px] leading-relaxed">
-                  {testEmailResult.message || testEmailResult.error}
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-
-        <div className="text-[11px] text-slate-500 flex items-center gap-1.5 pt-1">
-          <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-          <span>Never exposed to client bundles, Android APK, or version control. Strictly protected in server runtime.</span>
-        </div>
-      </div>
 
       {/* Cross-Device & Mobile Access Section */}
       <div className="bg-white rounded-2xl border border-slate-200 p-5 sm:p-6 shadow-xs space-y-4">

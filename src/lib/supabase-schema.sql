@@ -335,6 +335,200 @@ CREATE POLICY "Store members can delete customer_payments" ON public.customer_pa
   USING (public.is_store_member(store_id));
 
 -- ==============================================================================
+-- 15. Staff Invitations Table
+-- ==============================================================================
+CREATE TABLE IF NOT EXISTS public.staff_invitations (
+    id TEXT PRIMARY KEY DEFAULT ('inv-' || gen_random_uuid()::text),
+    store_id UUID REFERENCES public.stores(id) ON DELETE CASCADE NOT NULL,
+    store_name TEXT,
+    staff_id TEXT,
+    invited_by UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+    invited_by_name TEXT,
+    name TEXT NOT NULL,
+    email TEXT,
+    phone TEXT,
+    role TEXT DEFAULT 'cashier' NOT NULL,
+    permissions JSONB DEFAULT '[]'::jsonb NOT NULL,
+    token TEXT UNIQUE NOT NULL,
+    status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'accepted', 'expired', 'cancelled')) NOT NULL,
+    delivery_method TEXT DEFAULT 'email' CHECK (delivery_method IN ('whatsapp', 'email', 'copy_link')),
+    expires_at TIMESTAMPTZ NOT NULL,
+    accepted_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
+);
+
+-- Alter store_members to ensure all onboarding & permission columns exist
+DO $$
+BEGIN
+    ALTER TABLE public.store_members ADD COLUMN IF NOT EXISTS user_name TEXT;
+    ALTER TABLE public.store_members ADD COLUMN IF NOT EXISTS user_email TEXT;
+    ALTER TABLE public.store_members ADD COLUMN IF NOT EXISTS phone TEXT;
+    ALTER TABLE public.store_members ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'active';
+    ALTER TABLE public.store_members ADD COLUMN IF NOT EXISTS permissions JSONB DEFAULT '[]'::jsonb;
+    ALTER TABLE public.store_members ADD COLUMN IF NOT EXISTS invited_by UUID REFERENCES auth.users(id) ON DELETE SET NULL;
+    ALTER TABLE public.store_members ADD COLUMN IF NOT EXISTS invitation_token TEXT;
+    ALTER TABLE public.store_members ADD COLUMN IF NOT EXISTS invitation_expires_at TIMESTAMPTZ;
+    ALTER TABLE public.store_members ADD COLUMN IF NOT EXISTS last_active TIMESTAMPTZ;
+    ALTER TABLE public.store_members ADD COLUMN IF NOT EXISTS notes TEXT;
+EXCEPTION
+    WHEN others THEN NULL;
+END $$;
+
+-- ==============================================================================
+-- 16. Staff Activity Log Table
+-- ==============================================================================
+CREATE TABLE IF NOT EXISTS public.staff_activity (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    store_id UUID REFERENCES public.stores(id) ON DELETE CASCADE NOT NULL,
+    staff_id TEXT,
+    staff_name TEXT NOT NULL,
+    staff_email TEXT,
+    action TEXT NOT NULL,
+    details TEXT,
+    created_at TIMESTAMPTZ DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
+);
+
+-- ==============================================================================
+-- Indexes for Staff & Invitations
+-- ==============================================================================
+CREATE INDEX IF NOT EXISTS idx_staff_invitations_store_id ON public.staff_invitations(store_id);
+CREATE INDEX IF NOT EXISTS idx_staff_invitations_token ON public.staff_invitations(token);
+CREATE INDEX IF NOT EXISTS idx_staff_invitations_status ON public.staff_invitations(status);
+CREATE INDEX IF NOT EXISTS idx_staff_activity_store_id ON public.staff_activity(store_id);
+CREATE INDEX IF NOT EXISTS idx_staff_activity_created_at ON public.staff_activity(created_at);
+
+-- ==============================================================================
+-- RLS Policies for Staff Invitations & Activity
+-- ==============================================================================
+ALTER TABLE public.staff_invitations ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.staff_activity ENABLE ROW LEVEL SECURITY;
+
+-- Staff Invitations Policies:
+-- 1. Store members can view invitations for their store
+CREATE POLICY "Store members can view invitations" ON public.staff_invitations FOR SELECT
+  USING (public.is_store_member(store_id));
+
+-- 2. Anyone (including unauthenticated invitees) can look up an invitation by token
+CREATE POLICY "Anyone can lookup invitation by token" ON public.staff_invitations FOR SELECT
+  USING (true);
+
+-- 3. Store owners can create invitations
+CREATE POLICY "Store owners can insert invitations" ON public.staff_invitations FOR INSERT
+  WITH CHECK (EXISTS (SELECT 1 FROM public.stores WHERE id = store_id AND owner_id = auth.uid()));
+
+-- 4. Store owners and invited users can update invitations (accept / cancel / resend)
+CREATE POLICY "Authorized users can update invitations" ON public.staff_invitations FOR UPDATE
+  USING (
+    EXISTS (SELECT 1 FROM public.stores WHERE id = store_id AND owner_id = auth.uid())
+    OR (auth.uid() IS NOT NULL AND status = 'pending')
+  );
+
+-- 5. Store owners can delete invitations
+CREATE POLICY "Store owners can delete invitations" ON public.staff_invitations FOR DELETE
+  USING (EXISTS (SELECT 1 FROM public.stores WHERE id = store_id AND owner_id = auth.uid()));
+
+-- Staff Activity Policies
+CREATE POLICY "Store members can view activity" ON public.staff_activity FOR SELECT
+  USING (public.is_store_member(store_id));
+
+CREATE POLICY "Store members can insert activity" ON public.staff_activity FOR INSERT
+  WITH CHECK (public.is_store_member(store_id));
+
+-- ==============================================================================
+-- Helper Function: Accept Staff Invitation Atomically
+-- ==============================================================================
+CREATE OR REPLACE FUNCTION public.accept_staff_invitation(
+    p_token TEXT,
+    p_user_id UUID,
+    p_user_email TEXT,
+    p_user_name TEXT
+)
+RETURNS JSONB AS $$
+DECLARE
+    v_inv public.staff_invitations%ROWTYPE;
+    v_member_id UUID;
+BEGIN
+    -- 1. Lookup invitation by token
+    SELECT * INTO v_inv
+    FROM public.staff_invitations
+    WHERE token = p_token
+    LIMIT 1;
+
+    IF NOT FOUND THEN
+        RETURN jsonb_build_object('success', false, 'error', 'Invitation not found or invalid.');
+    END IF;
+
+    IF v_inv.status = 'accepted' THEN
+        RETURN jsonb_build_object('success', false, 'error', 'This invitation has already been accepted.');
+    END IF;
+
+    IF v_inv.expires_at < NOW() THEN
+        RETURN jsonb_build_object('success', false, 'error', 'This invitation link has expired.');
+    END IF;
+
+    -- 2. Mark invitation as accepted
+    UPDATE public.staff_invitations
+    SET status = 'accepted',
+        accepted_at = NOW()
+    WHERE id = v_inv.id;
+
+    -- 3. Upsert store_member
+    INSERT INTO public.store_members (
+        store_id,
+        user_id,
+        user_name,
+        user_email,
+        phone,
+        role,
+        status,
+        permissions,
+        invited_by,
+        invitation_token,
+        last_active
+    ) VALUES (
+        v_inv.store_id,
+        p_user_id,
+        COALESCE(p_user_name, v_inv.name),
+        p_user_email,
+        v_inv.phone,
+        v_inv.role,
+        'active',
+        v_inv.permissions,
+        v_inv.invited_by,
+        p_token,
+        NOW()
+    )
+    ON CONFLICT (store_id, user_id) DO UPDATE SET
+        role = EXCLUDED.role,
+        permissions = EXCLUDED.permissions,
+        status = 'active',
+        last_active = NOW();
+
+    -- 4. Log activity
+    INSERT INTO public.staff_activity (
+        store_id,
+        staff_name,
+        staff_email,
+        action,
+        details
+    ) VALUES (
+        v_inv.store_id,
+        COALESCE(p_user_name, v_inv.name),
+        p_user_email,
+        'Accepted Staff Invitation',
+        'Joined as ' || v_inv.role
+    );
+
+    RETURN jsonb_build_object(
+        'success', true,
+        'store_id', v_inv.store_id,
+        'role', v_inv.role,
+        'message', 'Invitation accepted successfully'
+    );
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- ==============================================================================
 -- Realtime Replication
 -- ==============================================================================
 DO $$
@@ -347,6 +541,9 @@ BEGIN
   ALTER PUBLICATION supabase_realtime ADD TABLE public.customers;
   ALTER PUBLICATION supabase_realtime ADD TABLE public.customer_payments;
   ALTER PUBLICATION supabase_realtime ADD TABLE public.stores;
+  ALTER PUBLICATION supabase_realtime ADD TABLE public.store_members;
+  ALTER PUBLICATION supabase_realtime ADD TABLE public.staff_invitations;
+  ALTER PUBLICATION supabase_realtime ADD TABLE public.staff_activity;
 EXCEPTION
   WHEN others THEN NULL;
 END $$;

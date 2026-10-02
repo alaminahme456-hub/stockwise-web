@@ -1,6 +1,16 @@
 <!doctype html>
 <html lang="en">
   <head>
+    <script>
+      // Filter out harmless [vite] HMR WebSocket connection logs in iframe preview
+      (function(){
+        const origErr = console.error;
+        console.error = function(...args){
+          if (args.some(arg => typeof arg === 'string' && (arg.includes('[vite]') || arg.includes('WebSocket') || arg.includes('websocket')))) return;
+          origErr.apply(console, args);
+        };
+      })();
+    </script>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
     <title>ALTECH StockWise</title>
@@ -13,7 +23,6 @@
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <link rel="icon" type="image/svg+xml" href="/icon.svg" />
     <link rel="icon" type="image/x-icon" href="/favicon.ico" />
-    <link rel="manifest" href="/manifest.webmanifest" />
     <meta property="og:title" content="ALTECH StockWise" />
     <meta property="og:description" content="Production-ready inventory, sales, POS, and multi-store business management system powered by Supabase." />
     <meta property="og:type" content="website" />

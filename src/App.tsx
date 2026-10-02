@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { StoreProvider, useStore } from './context/StoreContext';
 import { ToastProvider, useToast } from './context/ToastContext';
+import { PWAInstallProvider } from './context/PWAInstallContext';
 import { AuthModal } from './components/AuthModal';
 import { Navbar } from './components/Navbar';
 import { Sidebar } from './components/Sidebar';
@@ -35,6 +36,36 @@ import {
   ShieldAlert
 } from 'lucide-react';
 import { formatCurrency } from './lib/utils';
+
+// Robust invitation token extractor across pathnames, query parameters, and hash routes
+function extractInviteTokenFromLocation(): string | null {
+  if (typeof window === 'undefined') return null;
+
+  // 1. Direct pathname: /invite/:token or /invite/:token/
+  const pathname = window.location.pathname || '';
+  const match = pathname.match(/\/invite\/([a-zA-Z0-9_\-\.]+)/i);
+  if (match && match[1]) {
+    return match[1].trim();
+  }
+
+  // 2. Query param: ?invite=token or ?token=token
+  try {
+    const searchParams = new URLSearchParams(window.location.search);
+    const queryToken = searchParams.get('invite') || searchParams.get('token');
+    if (queryToken && queryToken.trim()) {
+      return queryToken.trim();
+    }
+  } catch {}
+
+  // 3. Hash fallback: #/invite/token or #invite=token
+  const hash = window.location.hash || '';
+  const hashMatch = hash.match(/invite[=\/]([a-zA-Z0-9_\-\.]+)/i);
+  if (hashMatch && hashMatch[1]) {
+    return hashMatch[1].trim();
+  }
+
+  return null;
+}
 
 const MainAppLayout: React.FC = () => {
   const { user, loading: authLoading, signOut } = useAuth();
@@ -77,27 +108,7 @@ const MainAppLayout: React.FC = () => {
 
   // Global invitation token state (from URL search, hash, pathname or in-app testing)
   const [activeInviteToken, setActiveInviteToken] = useState<string | null>(() => {
-    if (typeof window !== 'undefined') {
-      const searchParams = new URLSearchParams(window.location.search);
-      const queryToken = searchParams.get('invite');
-      if (queryToken) return queryToken;
-
-      const hash = window.location.hash;
-      if (hash.includes('invite/')) {
-        const parts = hash.split('invite/');
-        if (parts[1]) return parts[1].replace(/[^a-zA-Z0-9_-]/g, '');
-      } else if (hash.includes('invite=')) {
-        const parts = hash.split('invite=');
-        if (parts[1]) return parts[1].replace(/[^a-zA-Z0-9_-]/g, '');
-      }
-
-      const pathname = window.location.pathname;
-      if (pathname.includes('/invite/')) {
-        const parts = pathname.split('/invite/');
-        if (parts[1]) return parts[1].replace(/[^a-zA-Z0-9_-]/g, '');
-      }
-    }
-    return null;
+    return extractInviteTokenFromLocation();
   });
 
   // Listen for browser URL / hash changes & Android deep link appUrlOpen events
@@ -106,24 +117,8 @@ const MainAppLayout: React.FC = () => {
       const pathname = window.location.pathname;
       setIsDownloadRoute(pathname.startsWith('/download'));
 
-      const searchParams = new URLSearchParams(window.location.search);
-      const queryToken = searchParams.get('invite');
-      if (queryToken) {
-        setActiveInviteToken(queryToken);
-        return;
-      }
-      if (pathname.includes('/invite/')) {
-        const parts = pathname.split('/invite/');
-        if (parts[1]) {
-          setActiveInviteToken(parts[1].replace(/[^a-zA-Z0-9_-]/g, ''));
-          return;
-        }
-      }
-      const hash = window.location.hash;
-      if (hash.includes('invite/')) {
-        const parts = hash.split('invite/');
-        if (parts[1]) setActiveInviteToken(parts[1].replace(/[^a-zA-Z0-9_-]/g, ''));
-      }
+      const token = extractInviteTokenFromLocation();
+      setActiveInviteToken(token);
     };
 
     window.addEventListener('popstate', handleUrlCheck);
@@ -766,7 +761,9 @@ export default function App() {
     <AuthProvider>
       <StoreProvider>
         <ToastProvider>
-          <MainAppLayout />
+          <PWAInstallProvider>
+            <MainAppLayout />
+          </PWAInstallProvider>
         </ToastProvider>
       </StoreProvider>
     </AuthProvider>

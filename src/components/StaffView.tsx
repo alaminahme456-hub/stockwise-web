@@ -17,6 +17,7 @@ import {
   buildWhatsAppLinks, 
   openWhatsAppChat 
 } from '../lib/whatsapp';
+import { buildStaffInvitationUrl } from '../config/appConfig';
 import { WhatsAppIcon } from './WhatsAppIcon';
 import { ExpandableSearch } from './ExpandableSearch';
 import { 
@@ -87,7 +88,7 @@ export const StaffView: React.FC<StaffViewProps> = ({ onOpenInvitationToken }) =
   const [addStep, setAddStep] = useState<'details' | 'permissions' | 'preview'>('details');
   const [newStaffName, setNewStaffName] = useState('');
   const [newStaffEmail, setNewStaffEmail] = useState('');
-  const [newStaffPhone, setNewStaffPhone] = useState('');
+  const [newStaffPhone, setNewStaffPhone] = useState('+234');
   const [newStaffDeliveryMethod, setNewStaffDeliveryMethod] = useState<InvitationDeliveryMethod>('whatsapp');
   const [newStaffRole, setNewStaffRole] = useState<string>('cashier');
   const [newStaffNotes, setNewStaffNotes] = useState('');
@@ -121,7 +122,7 @@ export const StaffView: React.FC<StaffViewProps> = ({ onOpenInvitationToken }) =
   // Resend Staff Invitation Modal
   const [resendingInv, setResendingInv] = useState<StaffInvitation | null>(null);
   const [resendDeliveryMethod, setResendDeliveryMethod] = useState<InvitationDeliveryMethod>('whatsapp');
-  const [resendPhone, setResendPhone] = useState('');
+  const [resendPhone, setResendPhone] = useState('+234');
   const [resendEmail, setResendEmail] = useState('');
   const [resendingLoading, setResendingLoading] = useState(false);
   const [resendError, setResendError] = useState<string | null>(null);
@@ -210,7 +211,7 @@ export const StaffView: React.FC<StaffViewProps> = ({ onOpenInvitationToken }) =
   const handleOpenAddWizard = () => {
     setNewStaffName('');
     setNewStaffEmail('');
-    setNewStaffPhone('');
+    setNewStaffPhone('+234');
     setNewStaffDeliveryMethod('whatsapp');
     setNewStaffRole('cashier');
     setNewStaffNotes('');
@@ -287,7 +288,7 @@ export const StaffView: React.FC<StaffViewProps> = ({ onOpenInvitationToken }) =
   const handleOpenResendModal = (inv: StaffInvitation) => {
     setResendingInv(inv);
     setResendDeliveryMethod(inv.delivery_method || (inv.phone ? 'whatsapp' : 'email'));
-    setResendPhone(inv.phone || '');
+    setResendPhone(inv.phone || '+234');
     setResendEmail(inv.email || '');
     setResendError(null);
   };
@@ -431,8 +432,7 @@ export const StaffView: React.FC<StaffViewProps> = ({ onOpenInvitationToken }) =
 
   // Helper: copy invitation link to clipboard
   const handleCopyLink = (token: string) => {
-    const origin = typeof window !== 'undefined' ? window.location.origin : '';
-    const inviteUrl = `${origin}/invite/${token}`;
+    const inviteUrl = buildStaffInvitationUrl(token);
     if (navigator.clipboard) {
       navigator.clipboard.writeText(inviteUrl);
       setCopiedLink(true);
@@ -947,6 +947,9 @@ export const StaffView: React.FC<StaffViewProps> = ({ onOpenInvitationToken }) =
                     <div
                       onClick={() => {
                         setNewStaffDeliveryMethod('whatsapp');
+                        if (!newStaffPhone || !newStaffPhone.trim()) {
+                          setNewStaffPhone('+234');
+                        }
                         if (createError) setCreateError(null);
                       }}
                       className={`p-3.5 rounded-2xl border-2 cursor-pointer transition text-left flex flex-col justify-between ${
@@ -1068,7 +1071,7 @@ export const StaffView: React.FC<StaffViewProps> = ({ onOpenInvitationToken }) =
                               if (createError) setCreateError(null);
                             }}
                             className={`w-full pl-10 pr-3.5 py-2.5 text-sm bg-white border rounded-xl font-mono focus:outline-none ${
-                              newStaffPhone.trim() && !phoneValidation.valid
+                              newStaffPhone.trim() && newStaffPhone.trim() !== '+234' && newStaffPhone.trim() !== '+' && !phoneValidation.valid
                                 ? 'border-amber-300 focus:border-amber-500'
                                 : 'border-slate-200 focus:border-emerald-500'
                             }`}
@@ -1082,6 +1085,10 @@ export const StaffView: React.FC<StaffViewProps> = ({ onOpenInvitationToken }) =
                               <span className="text-emerald-700 font-semibold flex items-center gap-1">
                                 <Check className="w-3.5 h-3.5 text-emerald-600" />
                                 <span>International E.164: {phoneValidation.formattedDisplay}</span>
+                              </span>
+                            ) : newStaffPhone.trim() === '+234' || newStaffPhone.trim() === '+' ? (
+                              <span className="text-slate-500 flex items-center gap-1">
+                                <span>Default country code: Nigeria (+234). Enter remaining phone digits.</span>
                               </span>
                             ) : (
                               <span className="text-amber-800 flex items-center gap-1">
@@ -1675,7 +1682,7 @@ export const StaffView: React.FC<StaffViewProps> = ({ onOpenInvitationToken }) =
                 <input
                   type="text"
                   readOnly
-                  value={`${typeof window !== 'undefined' ? window.location.origin : ''}/invite/${invitationSuccess.invitation.token}`}
+                  value={buildStaffInvitationUrl(invitationSuccess.invitation.token)}
                   className="w-full px-3 py-2 text-xs font-mono bg-slate-50 border border-slate-200 rounded-xl text-slate-700 select-all"
                 />
                 <button
@@ -1858,6 +1865,10 @@ export const StaffView: React.FC<StaffViewProps> = ({ onOpenInvitationToken }) =
                         <span className="text-emerald-700 font-semibold flex items-center gap-1">
                           <Check className="w-3 h-3 text-emerald-600" />
                           <span>International: {resendPhoneValidation.formattedDisplay}</span>
+                        </span>
+                      ) : resendPhone.trim() === '+234' || resendPhone.trim() === '+' ? (
+                        <span className="text-slate-500 flex items-center gap-1">
+                          <span>Enter remaining digits after +234</span>
                         </span>
                       ) : (
                         <span className="text-amber-800 flex items-center gap-1">

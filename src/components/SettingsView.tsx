@@ -24,16 +24,54 @@ import {
   RefreshCw,
   Smartphone,
   Download,
-  ExternalLink
+  ExternalLink,
+  Share2,
+  PlusSquare,
+  X,
+  CheckCircle
 } from 'lucide-react';
 import { Store } from '../types';
-import { PWAInstallButton } from './PWAInstallButton';
+import { usePWAInstall } from '../context/PWAInstallContext';
 import { STOCKWISE_ANDROID_APK_URL, isApkConfigured } from '../config/appConfig';
 
 export const SettingsView: React.FC = () => {
   const { currentStore, settings, stores, setCurrentStore, refreshStoreData, refreshStores } = useStore();
   const { user } = useAuth();
   const { showToast } = useToast();
+  const { deferredPrompt, isInstallable, isInstalled, isIOS, install } = usePWAInstall();
+
+  // iOS Safari PWA guide modal state
+  const [showIOSInstallGuide, setShowIOSInstallGuide] = useState(false);
+  const [installingPWA, setInstallingPWA] = useState(false);
+
+  // Trigger the saved beforeinstallprompt event when clicked
+  const handleTriggerInstallPrompt = async () => {
+    if (isInstalled) {
+      showToast('✓ StockWise is already installed and running as a standalone app.', 'info');
+      return;
+    }
+
+    if (isIOS) {
+      setShowIOSInstallGuide(true);
+      return;
+    }
+
+    if (deferredPrompt) {
+      setInstallingPWA(true);
+      try {
+        const accepted = await install();
+        if (accepted) {
+          showToast('✓ StockWise app installation confirmed!', 'success');
+        }
+      } finally {
+        setInstallingPWA(false);
+      }
+      return;
+    }
+
+    // If deferredPrompt is not yet fired or not supported
+    showToast('To install StockWise, look for the install icon in your browser address bar or menu.', 'info');
+  };
 
   // SendLib email integration state
   const [sendlibStatus, setSendlibStatus] = useState<{ configured: boolean; service: string; endpoint: string } | null>(null);
@@ -706,7 +744,25 @@ export const SettingsView: React.FC = () => {
               <p className="text-xs text-slate-500">Android APK download, iPhone PWA install, and staff access</p>
             </div>
           </div>
-          <PWAInstallButton />
+
+          {/* New Header Install Button triggering the saved beforeinstallprompt */}
+          {isInstalled ? (
+            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-bold">
+              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+              <span>App Installed</span>
+            </span>
+          ) : (
+            <button
+              type="button"
+              onClick={handleTriggerInstallPrompt}
+              disabled={installingPWA}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white rounded-xl text-xs font-bold transition shadow-xs cursor-pointer disabled:opacity-50"
+              title={isInstallable ? 'Install StockWise App (Prompt Ready)' : 'Install StockWise on your device'}
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>{installingPWA ? 'Installing...' : 'Install App'}</span>
+            </button>
+          )}
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1">
@@ -749,26 +805,133 @@ export const SettingsView: React.FC = () => {
             </div>
           </div>
 
-          {/* iPhone / iPad PWA Card */}
+          {/* iPhone / iPad & Desktop PWA Card */}
           <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-3">
             <div className="flex items-center justify-between">
               <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
                 <Smartphone className="w-4 h-4 text-blue-600" />
-                <span>iPhone / iPad (PWA)</span>
+                <span>{isIOS ? 'iPhone / iPad (PWA)' : 'StockWise Web App (PWA)'}</span>
               </span>
               <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded bg-blue-100 text-blue-800">
-                PWA Web App
+                PWA Installable
               </span>
             </div>
             <p className="text-xs text-slate-600 leading-relaxed">
-              Install directly from Safari by tapping <strong>Share</strong> &rarr; <strong>Add to Home Screen</strong>. Launches in fullscreen standalone mode.
+              {isIOS 
+                ? 'Install directly from Safari by tapping Share → Add to Home Screen. Launches in fullscreen standalone mode.'
+                : 'Install StockWise directly to your device for instant launch, offline support, and dedicated standalone window.'}
             </p>
             <div className="pt-1">
-              <PWAInstallButton />
+              {isInstalled ? (
+                <div className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-100 text-emerald-800 rounded-xl text-xs font-bold">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                  <span>Installed &amp; Active</span>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleTriggerInstallPrompt}
+                  disabled={installingPWA}
+                  className="w-full sm:w-auto inline-flex items-center justify-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white rounded-xl text-xs font-bold transition shadow-xs cursor-pointer disabled:opacity-50"
+                  title="Trigger saved install prompt"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>
+                    {installingPWA 
+                      ? 'Installing...' 
+                      : isIOS 
+                      ? 'Add to Home Screen' 
+                      : isInstallable 
+                      ? 'Install StockWise App' 
+                      : 'Install StockWise'}
+                  </span>
+                </button>
+              )}
             </div>
           </div>
         </div>
       </div>
+
+      {/* iOS Safari Step-by-Step Installation Modal */}
+      {showIOSInstallGuide && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-xs p-4 animate-in fade-in duration-150">
+          <div className="w-full max-w-sm rounded-3xl bg-slate-900 border border-slate-700 p-6 shadow-2xl text-white">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-blue-600 text-white flex items-center justify-center font-bold text-xs">
+                  SW
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-white">Add StockWise to Home Screen</h3>
+                  <p className="text-[11px] text-slate-400">Install StockWise on iPhone / iPad</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowIOSInstallGuide(false)}
+                className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="mt-4 space-y-3 text-xs text-slate-300">
+              <div className="flex items-start gap-3 p-3 rounded-2xl bg-slate-800/80 border border-slate-700/60">
+                <div className="w-7 h-7 rounded-xl bg-blue-500/20 text-blue-400 flex items-center justify-center font-bold text-xs shrink-0 mt-0.5">
+                  1
+                </div>
+                <div>
+                  <div className="font-semibold text-white flex items-center gap-1.5">
+                    <span>Tap the Share button</span>
+                    <Share2 className="w-3.5 h-3.5 text-blue-400" />
+                  </div>
+                  <p className="text-[11px] text-slate-400 mt-0.5">
+                    Located in Safari toolbar at the bottom of your iPhone.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-start gap-3 p-3 rounded-2xl bg-slate-800/80 border border-slate-700/60">
+                <div className="w-7 h-7 rounded-xl bg-blue-500/20 text-blue-400 flex items-center justify-center font-bold text-xs shrink-0 mt-0.5">
+                  2
+                </div>
+                <div>
+                  <div className="font-semibold text-white flex items-center gap-1.5">
+                    <span>Select &quot;Add to Home Screen&quot;</span>
+                    <PlusSquare className="w-3.5 h-3.5 text-emerald-400" />
+                  </div>
+                  <p className="text-[11px] text-slate-400 mt-0.5">
+                    Scroll down in the Safari share sheet.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-start gap-3 p-3 rounded-2xl bg-slate-800/80 border border-slate-700/60">
+                <div className="w-7 h-7 rounded-xl bg-blue-500/20 text-blue-400 flex items-center justify-center font-bold text-xs shrink-0 mt-0.5">
+                  3
+                </div>
+                <div>
+                  <div className="font-semibold text-white flex items-center gap-1.5">
+                    <span>Tap &quot;Add&quot;</span>
+                    <CheckCircle className="w-3.5 h-3.5 text-blue-400" />
+                  </div>
+                  <p className="text-[11px] text-slate-400 mt-0.5">
+                    StockWise will appear on your Home Screen as an app.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setShowIOSInstallGuide(false)}
+              className="mt-5 w-full py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs transition cursor-pointer"
+            >
+              Done
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Create New Store Modal */}
       {isNewStoreOpen && (

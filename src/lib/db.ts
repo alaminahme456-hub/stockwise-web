@@ -17,7 +17,12 @@ import {
   StaffInvitation,
   StaffActivity
 } from '../types';
-import { generateInvitationToken, ROLE_TEMPLATES, formatRoleName } from './permissions';
+import { 
+  generateInvitationToken, 
+  decodeInvitationToken, 
+  ROLE_TEMPLATES, 
+  formatRoleName 
+} from './permissions';
 
 // ==========================================
 // USER-SCOPED STORAGE FOR STRICT ISOLATION
@@ -1435,6 +1440,28 @@ function saveGlobalInvitations(invs: StaffInvitation[]): void {
   }
 }
 
+export function getAcceptedInvitationTokens(): Set<string> {
+  if (typeof window === 'undefined') return new Set();
+  try {
+    const raw = localStorage.getItem('stockwise_accepted_tokens');
+    return raw ? new Set(JSON.parse(raw)) : new Set();
+  } catch {
+    return new Set();
+  }
+}
+
+export function markTokenAsAccepted(token: string, id?: string): void {
+  if (typeof window === 'undefined') return;
+  try {
+    const set = getAcceptedInvitationTokens();
+    if (token) set.add(token);
+    if (id) set.add(id);
+    localStorage.setItem('stockwise_accepted_tokens', JSON.stringify(Array.from(set)));
+  } catch {
+    // ignore
+  }
+}
+
 // ==========================================
 // STAFF MANAGEMENT & INVITATIONS SYSTEM
 // ==========================================
@@ -1512,7 +1539,6 @@ export async function createStaffInvitation(params: {
   notes?: string;
   deliveryMethod?: 'whatsapp' | 'email' | 'copy_link';
 }): Promise<{ member: StoreMember; invitation: StaffInvitation }> {
-  const token = generateInvitationToken();
   const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(); // 7 days expiration
   const invitationId = `inv-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
   const memberId = `mem-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
@@ -1520,6 +1546,18 @@ export async function createStaffInvitation(params: {
   const deliveryMethod = params.deliveryMethod || (params.phone ? 'whatsapp' : 'email');
   const cleanEmail = params.email?.trim().toLowerCase() || '';
   const cleanPhone = params.phone?.trim() || null;
+
+  const token = generateInvitationToken({
+    id: invitationId,
+    storeId: params.storeId,
+    storeName: params.storeName,
+    role: params.role,
+    permissions: params.permissions,
+    name: params.name.trim(),
+    email: cleanEmail || null,
+    phone: cleanPhone || null,
+    expiresAt,
+  });
 
   const invitation: StaffInvitation = {
     id: invitationId,
@@ -1705,12 +1743,19 @@ export async function cancelStaffInvitation(
 }
 
 export async function lookupStaffInvitation(token: string): Promise<StaffInvitation | null> {
-  if (!token) return null;
+  if (!token || typeof token !== 'string') return null;
+
+  const acceptedTokens = getAcceptedInvitationTokens();
 
   // 1. Check global localStorage registry
   const globalInvs = getGlobalInvitations();
-  const found = globalInvs.find((i) => i.token === token);
-  if (found) return found;
+  const found = globalInvs.find((i) => i.token === token || i.id === token);
+  if (found) {
+    if (acceptedTokens.has(token) || acceptedTokens.has(found.id)) {
+      return { ...found, status: 'accepted' };
+    }
+    return found;
+  }
 
   // 2. Check Supabase if configured
   try {
@@ -1720,7 +1765,12 @@ export async function lookupStaffInvitation(token: string): Promise<StaffInvitat
       .eq('token', token)
       .maybeSingle();
 
-    if (data) return data;
+    if (data) {
+      if (acceptedTokens.has(token) || acceptedTokens.has(data.id)) {
+        return { ...data, status: 'accepted' };
+      }
+      return data;
+    }
   } catch {
     // ignore
   }
@@ -1732,13 +1782,42 @@ export async function lookupStaffInvitation(token: string): Promise<StaffInvitat
       if (key && key.startsWith('stockwise_user_data_')) {
         try {
           const parsed = JSON.parse(localStorage.getItem(key) || '{}');
-          const match = (parsed.staffInvitations || []).find((inv: StaffInvitation) => inv.token === token);
-          if (match) return match;
+          const match = (parsed.staffInvitations || []).find((inv: StaffInvitation) => inv.token === token || inv.id === token);
+          if (match) {
+            if (acceptedTokens.has(token) || acceptedTokens.has(match.id)) {
+              return { ...match, status: 'accepted' };
+            }
+            return match;
+          }
         } catch {
           // ignore
         }
       }
     }
+  }
+
+  // 4. Decode structured self-contained invitation token
+  const decoded = decodeInvitationToken(token);
+  if (decoded) {
+    const isAccepted = acceptedTokens.has(token) || acceptedTokens.has(decoded.id);
+    return {
+      id: decoded.id,
+      store_id: decoded.store_id,
+      store_name: decoded.store_name,
+      invited_by: 'owner',
+      invited_by_name: 'Store Owner',
+      staff_id: `mem-${decoded.id}`,
+      name: decoded.name,
+      email: decoded.email,
+      phone: decoded.phone,
+      role: decoded.role,
+      permissions: decoded.permissions,
+      token,
+      status: isAccepted ? 'accepted' : 'pending',
+      expires_at: decoded.expires_at,
+      created_at: new Date(Date.now() - 60000).toISOString(),
+      delivery_method: decoded.phone ? 'whatsapp' : decoded.email ? 'email' : 'copy_link',
+    };
   }
 
   return null;
@@ -1765,15 +1844,24 @@ export async function acceptStaffInvitation(
 
   const storeId = invitation.store_id;
   const { userId: ownerUserId, storage: ownerStorage } = findStorageForStore(storeId);
-  const store = ownerStorage.stores.find((s) => s.id === storeId);
+  let store = ownerStorage?.stores?.find((s) => s.id === storeId);
 
+  // Cross-device fallback: reconstruct store model from verified invitation metadata if absent locally
   if (!store) {
-    throw new Error('Store associated with this invitation was not found.');
+    store = {
+      id: storeId,
+      owner_id: invitation.invited_by || 'owner',
+      name: invitation.store_name || 'StockWise Store',
+      business_name: invitation.store_name,
+      currency: 'USD',
+      created_at: invitation.created_at || new Date().toISOString(),
+    };
   }
 
-  // Mark invitation as accepted
+  // Mark invitation as accepted locally and globally
   invitation.status = 'accepted';
   invitation.accepted_at = new Date().toISOString();
+  markTokenAsAccepted(token, invitation.id);
 
   // Update in global invitations registry
   const globalInvs = getGlobalInvitations().map((i) => (i.id === invitation.id ? invitation : i));

@@ -23,6 +23,7 @@ import {
   buildWhatsAppLinks, 
   openWhatsAppChat 
 } from '../lib/whatsapp';
+import { buildStaffInvitationUrl } from '../config/appConfig';
 import { 
   fetchUserStores, 
   fetchProducts, 
@@ -516,8 +517,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setStaffInvitations((prev) => [result.invitation, ...prev]);
     fetchStaffActivity(currentStore.id).then(setStaffActivity).catch(console.warn);
 
-    const origin = typeof window !== 'undefined' ? window.location.origin : '';
-    const inviteUrl = `${origin}/invite/${result.invitation.token}`;
+    const inviteUrl = buildStaffInvitationUrl(result.invitation.token);
 
     let emailSent: boolean | undefined = undefined;
     let emailError: string | undefined = undefined;
@@ -590,8 +590,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const deliveryMethod: InvitationDeliveryMethod = 
       options?.deliveryMethod || updated.delivery_method || (updated.phone ? 'whatsapp' : 'email');
 
-    const origin = typeof window !== 'undefined' ? window.location.origin : '';
-    const inviteUrl = `${origin}/invite/${updated.token}`;
+    const inviteUrl = buildStaffInvitationUrl(updated.token);
 
     let emailSent: boolean | undefined = undefined;
     let emailError: string | undefined = undefined;

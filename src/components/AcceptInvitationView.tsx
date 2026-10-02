@@ -69,14 +69,14 @@ export const AcceptInvitationView: React.FC<AcceptInvitationViewProps> = ({
       try {
         const inv = await lookupStaffInvitation(token);
         if (!inv) {
-          setErrorMsg('This invitation link is invalid.');
+          setErrorMsg('This invitation link is invalid or no longer available.');
           setLoading(false);
           return;
         }
 
         if (new Date(inv.expires_at) < new Date()) {
           setIsExpired(true);
-          setErrorMsg('This invitation has expired. Ask the store owner to send you a new invitation.');
+          setErrorMsg('This invitation has expired. Please ask the store owner to send you a new invitation.');
           setInvitation(inv);
           setLoading(false);
           return;
@@ -454,12 +454,11 @@ export const AcceptInvitationView: React.FC<AcceptInvitationViewProps> = ({
         <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl text-slate-200 space-y-5">
           {/* Invitation Banner */}
           <div className="text-center pb-5 border-b border-slate-800">
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider bg-blue-500/15 text-blue-300 border border-blue-500/30">
-              <Sparkles className="w-3.5 h-3.5" />
-              <span>You&apos;ve Been Invited!</span>
-            </span>
+            <h2 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
+              You&apos;re invited to StockWise
+            </h2>
 
-            <div className="mt-3">
+            <div className="mt-4">
               <span className="text-xs text-slate-400 uppercase font-semibold tracking-wider">Store:</span>
               <div className="text-2xl sm:text-3xl font-black text-blue-400 mt-0.5">
                 {invitation?.store_name || 'StockWise Store'}

@@ -233,20 +233,111 @@ export function formatRoleName(role?: string | null): string {
   return role.charAt(0).toUpperCase() + role.slice(1);
 }
 
-export function generateInvitationToken(): string {
+export interface InvitationPayload {
+  id: string;
+  storeId: string;
+  storeName: string;
+  role: string;
+  permissions: string[];
+  name: string;
+  email?: string | null;
+  phone?: string | null;
+  expiresAt: string;
+}
+
+export function generateInvitationToken(payload?: InvitationPayload): string {
   const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
+  let rand = '';
   if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
-    const buffer = new Uint8Array(24);
+    const buffer = new Uint8Array(16);
     crypto.getRandomValues(buffer);
-    let token = 'inv_';
-    for (let i = 0; i < 24; i++) {
-      token += chars.charAt(buffer[i] % chars.length);
+    for (let i = 0; i < 16; i++) {
+      rand += chars.charAt(buffer[i] % chars.length);
     }
-    return token;
+  } else {
+    for (let i = 0; i < 16; i++) {
+      rand += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
   }
-  let token = 'inv_';
-  for (let i = 0; i < 24; i++) {
-    token += chars.charAt(Math.floor(Math.random() * chars.length));
+
+  if (!payload) {
+    return `inv_${rand}`;
   }
-  return token;
+
+  try {
+    const compactData = {
+      i: payload.id,
+      s: payload.storeId,
+      n: payload.storeName,
+      r: payload.role,
+      p: payload.permissions,
+      m: payload.name,
+      e: payload.email || '',
+      ph: payload.phone || '',
+      x: payload.expiresAt,
+    };
+    const jsonStr = JSON.stringify(compactData);
+    let base64 = '';
+    if (typeof btoa !== 'undefined') {
+      base64 = btoa(encodeURIComponent(jsonStr).replace(/%([0-9A-F]{2})/g, (_, p1) => String.fromCharCode(parseInt(p1, 16))));
+    } else {
+      base64 = Buffer.from(jsonStr, 'utf-8').toString('base64');
+    }
+    const base64url = base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    return `inv_${rand}_${base64url}`;
+  } catch {
+    return `inv_${rand}`;
+  }
+}
+
+export function decodeInvitationToken(token: string): {
+  id: string;
+  store_id: string;
+  store_name: string;
+  role: string;
+  permissions: string[];
+  name: string;
+  email: string;
+  phone: string | null;
+  expires_at: string;
+} | null {
+  if (!token || typeof token !== 'string') return null;
+  if (!token.startsWith('inv_')) return null;
+  const parts = token.split('_');
+  if (parts.length < 3) return null;
+  const base64url = parts.slice(2).join('_');
+
+  try {
+    let base64 = base64url.replace(/-/g, '+').replace(/_/g, '/');
+    while (base64.length % 4 !== 0) {
+      base64 += '=';
+    }
+    let jsonStr = '';
+    if (typeof atob !== 'undefined') {
+      jsonStr = decodeURIComponent(
+        Array.prototype.map.call(atob(base64), (c: string) => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)).join('')
+      );
+    } else {
+      jsonStr = Buffer.from(base64, 'base64').toString('utf-8');
+    }
+    const data = JSON.parse(jsonStr);
+
+    if (!data.s || !data.n || !data.r || !data.x) {
+      return null;
+    }
+
+    return {
+      id: data.i || `inv-${Date.now()}`,
+      store_id: data.s,
+      store_name: data.n,
+      role: data.r,
+      permissions: Array.isArray(data.p) ? data.p : [],
+      name: data.m || 'Staff Member',
+      email: data.e || '',
+      phone: data.ph || null,
+      expires_at: data.x,
+    };
+  } catch {
+    return null;
+  }
 }

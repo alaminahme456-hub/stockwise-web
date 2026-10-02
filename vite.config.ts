@@ -2,12 +2,31 @@ import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 import path from 'path';
+import { fileURLToPath } from 'url';
 import { defineConfig } from 'vite';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 export default defineConfig(() => {
   return {
-    base: './',
+    base: '/',
     plugins: [
+      {
+        name: 'suppress-hmr-websocket-errors',
+        transformIndexHtml: {
+          order: 'pre',
+          handler() {
+            return [
+              {
+                tag: 'script',
+                children: `(function(){const origErr=console.error;console.error=function(...args){if(args.some(arg=>typeof arg==='string'&&(arg.includes('[vite]')||arg.includes('WebSocket')||arg.includes('websocket'))))return;origErr.apply(console,args);};})();`,
+                injectTo: 'head-prepend',
+              },
+            ];
+          },
+        },
+      },
       react(), 
       tailwindcss(),
       VitePWA({
@@ -51,8 +70,7 @@ export default defineConfig(() => {
           ],
         },
         devOptions: {
-          enabled: true,
-          type: 'module',
+          enabled: false,
         },
       }),
     ],
@@ -64,8 +82,8 @@ export default defineConfig(() => {
     server: {
       host: '0.0.0.0',
       port: 3000,
-      hmr: process.env.DISABLE_HMR !== 'true',
-      watch: process.env.DISABLE_HMR === 'true' ? null : {},
+      hmr: false,
+      watch: null,
     },
   };
 });

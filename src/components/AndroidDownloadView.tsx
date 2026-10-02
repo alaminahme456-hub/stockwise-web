@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
 import { 
   STOCKWISE_ANDROID_APK_URL, 
+  STOCKWISE_PROD_URL,
   isApkConfigured, 
   getAndroidDeepLink,
   getAndroidIntentUrl,
+  buildStaffInvitationUrl,
   ANDROID_PACKAGE_NAME 
 } from '../config/appConfig';
 import { 
@@ -35,8 +37,8 @@ export const AndroidDownloadView: React.FC<AndroidDownloadViewProps> = ({
   const [deepLinkAttempted, setDeepLinkAttempted] = useState(false);
 
   const inviteUrl = token 
-    ? `${typeof window !== 'undefined' ? window.location.origin : ''}/invite/${token}` 
-    : '/';
+    ? buildStaffInvitationUrl(token) 
+    : STOCKWISE_PROD_URL;
 
   const deepLink = token ? getAndroidDeepLink(token) : 'stockwise://';
   const intentUrl = token ? getAndroidIntentUrl(token) : `intent://#Intent;package=${ANDROID_PACKAGE_NAME};end`;

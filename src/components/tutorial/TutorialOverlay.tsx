@@ -22,7 +22,9 @@ export const TutorialOverlay: React.FC<TutorialOverlayProps> = ({ mode, steps, o
 
   const locate = useCallback(() => {
     if (mode !== 'tour' || !active?.target) { setRect(null); setMissing(false); return; }
-    const target = document.querySelector<HTMLElement>(active.target);
+    const primary = document.querySelector<HTMLElement>(active.target);
+    const mobileFallback = active.tab ? document.querySelector<HTMLElement>(`#bottom-nav-${active.tab}`) : null;
+    const target = primary && primary.offsetParent !== null ? primary : mobileFallback;
     if (!target || target.offsetParent === null || target.getAttribute('aria-hidden') === 'true') {
       setRect(null); setMissing(true); return;
     }
@@ -37,7 +39,9 @@ export const TutorialOverlay: React.FC<TutorialOverlayProps> = ({ mode, steps, o
     let attempts = 0;
     let timer: number | undefined;
     const findTarget = () => {
-      const target = active.target ? document.querySelector<HTMLElement>(active.target) : null;
+      const primary = active.target ? document.querySelector<HTMLElement>(active.target) : null;
+      const mobileFallback = active.tab ? document.querySelector<HTMLElement>(`#bottom-nav-${active.tab}`) : null;
+      const target = primary && primary.offsetParent !== null ? primary : mobileFallback;
       if (target && target.offsetParent !== null) {
         target.scrollIntoView({ behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'center', inline: 'nearest' });
         timer = window.setTimeout(locate, 160);
@@ -104,7 +108,7 @@ export const TutorialOverlay: React.FC<TutorialOverlayProps> = ({ mode, steps, o
   } : { top: '50%', left: '50%', transform: 'translate(-50%, -50%)' };
 
   return <div className="sw-tour-layer" role="presentation">
-    <div className="sw-tour-shade" />
+    <div className="sw-tour-shade" style={rect ? { clipPath: `polygon(0 0, 100% 0, 100% 100%, 0 100%, 0 0, ${rect.left}px ${rect.top}px, ${rect.left}px ${rect.top + rect.height}px, ${rect.left + rect.width}px ${rect.top + rect.height}px, ${rect.left + rect.width}px ${rect.top}px, ${rect.left}px ${rect.top}px)` } : undefined} />
     {rect && <div className="sw-tour-spotlight" aria-hidden="true" style={{ top: rect.top - 5, left: rect.left - 5, width: rect.width + 10, height: rect.height + 10 }} />}
     <section className="sw-tour-card sw-tour-step-card" style={cardStyle} role="dialog" aria-modal="true" aria-labelledby="sw-tour-step-title">
       <button className="sw-tour-close" aria-label="Close tutorial" onClick={() => onClose(false)}><X size={20}/></button>

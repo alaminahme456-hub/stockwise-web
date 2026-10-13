@@ -6,15 +6,17 @@ import {
   LogOut, 
   ChevronDown, 
   ShieldCheck, 
-  Settings
+  Settings,
+  GraduationCap
 } from 'lucide-react';
 import { NavigationTab } from '../types';
 
 interface NavbarProps {
   onNavigate?: (tab: NavigationTab) => void;
+  onRestartTutorial?: () => void;
 }
 
-export const Navbar: React.FC<NavbarProps> = ({ onNavigate }) => {
+export const Navbar: React.FC<NavbarProps> = ({ onNavigate, onRestartTutorial }) => {
   const { user, profile, signOut } = useAuth();
   const { currentStore, isRealtimeConnected, currentMemberRole } = useStore();
   
@@ -91,6 +93,13 @@ export const Navbar: React.FC<NavbarProps> = ({ onNavigate }) => {
             </>
           )}
         </div>
+
+        {onRestartTutorial && (
+          <button type="button" onClick={onRestartTutorial} className="min-h-11 inline-flex items-center gap-1.5 px-2.5 rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-blue-50 hover:text-blue-700 text-xs font-semibold transition" aria-label="Help and tutorials">
+            <GraduationCap className="w-4 h-4" />
+            <span className="hidden sm:inline">Help &amp; Tutorials</span>
+          </button>
+        )}
 
         {/* User Profile dropdown */}
         <div className="relative shrink-0">

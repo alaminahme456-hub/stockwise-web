@@ -36,6 +36,8 @@ import {
   ShieldAlert
 } from 'lucide-react';
 import { formatCurrency } from './lib/utils';
+import { TutorialOverlay } from './components/tutorial/TutorialOverlay';
+import { tutorialSteps } from './components/tutorial/tutorialSteps';
 
 // Robust invitation token extractor across pathnames, query parameters, and hash routes
 function extractInviteTokenFromLocation(): string | null {
@@ -88,7 +90,6 @@ const MainAppLayout: React.FC = () => {
   const [currentTab, setCurrentTab] = useState<NavigationTab>('dashboard');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [selectedCustomerIdForProfile, setSelectedCustomerIdForProfile] = useState<string | null>(null);
-
   // Cashier landing tab optimization (Principle 17: Staff UX)
   React.useEffect(() => {
     if (currentMember && (currentMember.role === 'cashier' || currentMember.role === 'sales_staff')) {
@@ -110,6 +111,59 @@ const MainAppLayout: React.FC = () => {
   const [activeInviteToken, setActiveInviteToken] = useState<string | null>(() => {
     return extractInviteTokenFromLocation();
   });
+
+  const [tutorialMode, setTutorialMode] = useState<'welcome' | 'tour' | null>(null);
+  const [tutorialFeature, setTutorialFeature] = useState<string | null>(null);
+  const tutorialStorageKey = user && currentStore ? `stockwise:tutorial:v1:${user.id}:${currentStore.id}` : null;
+
+  // Offer onboarding only after auth, store membership, and the active store have loaded.
+  React.useEffect(() => {
+    if (authLoading || storeLoading || !user || !currentStore || activeInviteToken || isDownloadRoute || !tutorialStorageKey) return;
+    try {
+      if (!window.localStorage.getItem(tutorialStorageKey)) setTutorialMode('welcome');
+    } catch {
+      // Storage may be disabled in an embedded WebView; onboarding remains manually available.
+    }
+  }, [authLoading, storeLoading, user?.id, currentStore?.id, activeInviteToken, isDownloadRoute, tutorialStorageKey]);
+
+  const permittedTutorialSteps = tutorialSteps.filter((step) => step.tab && isTutorialTabPermitted(step.tab) && (!tutorialFeature || step.feature === tutorialFeature));
+
+  function isTutorialTabPermitted(tab: NavigationTab): boolean {
+    if (isStoreOwner) return true;
+    switch (tab) {
+      case 'dashboard': return hasPermission('dashboard.view');
+      case 'products': return hasPermission('products.view');
+      case 'inventory': return hasPermission('products.view') || hasPermission('products.adjust_stock');
+      case 'pos': return hasPermission('sales.create') || hasPermission('sales.view');
+      case 'customers': return hasPermission('customers.view') || hasPermission('credit.view');
+      case 'suppliers': return hasPermission('products.edit') || hasPermission('products.create');
+      case 'transactions': return hasPermission('sales.view');
+      case 'expenses': return hasPermission('expenses.view');
+      case 'reports': return hasPermission('reports.view');
+      case 'staff': return hasPermission('staff.view');
+      case 'settings': case 'stores': return true;
+      default: return false;
+    }
+  }
+
+  const finishTutorial = (completed: boolean) => {
+    if (tutorialStorageKey) {
+      try { window.localStorage.setItem(tutorialStorageKey, completed ? 'completed' : 'skipped'); } catch { /* ignore unavailable storage */ }
+    }
+    setTutorialMode(null);
+  };
+
+  const restartTutorial = () => {
+    setTutorialFeature(null);
+    setTutorialMode('welcome');
+  }
+
+  const startFeatureTutorial = (feature: string) => {
+    setTutorialFeature(feature);
+    setTutorialMode('tour');
+  }
+
+
 
   // Listen for browser URL / hash changes & Android deep link appUrlOpen events
   React.useEffect(() => {
@@ -489,8 +543,9 @@ const MainAppLayout: React.FC = () => {
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* Top Navbar */}
-        <Navbar 
-          onNavigate={(tab) => setCurrentTab(tab)} 
+        <Navbar
+          onNavigate={(tab) => setCurrentTab(tab)}
+          onRestartTutorial={restartTutorial}
         />
 
         {/* View Routing */}
@@ -562,6 +617,18 @@ const MainAppLayout: React.FC = () => {
           />
         )}
       </div>
+
+      {tutorialMode && currentStore && !activeInviteToken && !isDownloadRoute && (
+        <TutorialOverlay
+          mode={tutorialMode}
+          steps={permittedTutorialSteps}
+          onStart={() => { setTutorialFeature(null); setTutorialMode('tour'); }}
+          onStartFeature={startFeatureTutorial}
+          onSkip={() => finishTutorial(false)}
+          onClose={finishTutorial}
+          onNavigate={(tab) => setCurrentTab(tab)}
+        />
+      )}
 
       {/* Global Quick Search Modal */}
       {searchOpen && (

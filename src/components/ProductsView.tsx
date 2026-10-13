@@ -20,10 +20,11 @@ import {
   X,
   AlertCircle,
   Sparkles,
-  Loader2
+  Loader2,
+  LibraryBig
 } from 'lucide-react';
 
-export const ProductsView: React.FC = () => {
+export const ProductsView: React.FC<{ onOpenTemplates?: () => void }> = ({ onOpenTemplates }) => {
   const { currentStore, products, categories, suppliers, refreshStoreData } = useStore();
   const { user } = useAuth();
   const { showToast } = useToast();
@@ -286,13 +287,22 @@ export const ProductsView: React.FC = () => {
           </p>
         </div>
 
-        <div className="flex items-center gap-2.5 self-end sm:self-auto">
+        <div className="flex flex-wrap items-center gap-2.5 self-end sm:self-auto">
           {/* Expandable Search Button in Top Right Corner */}
           <ExpandableSearch
             value={searchQuery}
             onChange={setSearchQuery}
             placeholder="Search by product name, SKU, or description..."
           />
+
+          <button
+            type="button"
+            onClick={onOpenTemplates}
+            className="inline-flex items-center justify-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-3 py-2.5 text-sm font-semibold text-blue-700 transition hover:bg-blue-100 shrink-0"
+          >
+            <LibraryBig className="w-4 h-4" />
+            <span>Import from Templates</span>
+          </button>
 
           <button
             type="button"

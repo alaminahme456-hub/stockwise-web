@@ -30,3 +30,7 @@
 @media(prefers-reduced-motion:reduce){.sw-tour-spotlight,.sw-tour-progress-track span{transition:none}}
 
 .sw-tour-quick-start{border-top:1px solid #e2e8f0;margin-top:18px;padding-top:14px}.sw-tour-quick-start>span{display:block;font-size:11px;color:#64748b;font-weight:700;margin-bottom:9px}.sw-tour-quick-start>div{display:flex;flex-wrap:wrap;gap:7px}.sw-tour-quick-start button{min-height:36px;padding:0 10px;border-radius:10px;background:#f8fafc;border:1px solid #e2e8f0;color:#334155;font-size:11px;font-weight:700;cursor:pointer}.sw-tour-quick-start button:hover{background:#eff6ff;border-color:#bfdbfe;color:#1d4ed8}
+
+/* Keep the tutorial card readable while leaving the highlighted feature visible. */
+.sw-tour-step-card{max-height:min(320px,calc(100dvh - 24px));}
+@media(max-width:480px){.sw-tour-step-card{max-height:45dvh;}}

@@ -43,10 +43,7 @@ export const POSView: React.FC<POSViewProps> = ({ onNavigate }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
 
-  // Auto-focus search on load (Principle 1 & 14: POS Experience)
-  useEffect(() => {
-    searchInputRef.current?.focus();
-  }, []);
+  // Keep the POS screen keyboard-free on entry. Staff can tap the search field when ready.
 
   // Cart State
   const [cart, setCart] = useState<CartItem[]>([]);

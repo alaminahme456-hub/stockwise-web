@@ -7,6 +7,7 @@ interface TutorialOverlayProps {
   mode: 'welcome' | 'tour';
   steps: TutorialStep[];
   onStart: () => void;
+  onStartFeature: (feature: string) => void;
   onSkip: () => void;
   onClose: (completed: boolean) => void;
   onNavigate: (tab: NonNullable<TutorialStep['tab']>) => void;
@@ -14,7 +15,7 @@ interface TutorialOverlayProps {
 
 interface Rect { top: number; left: number; width: number; height: number; }
 
-export const TutorialOverlay: React.FC<TutorialOverlayProps> = ({ mode, steps, onStart, onSkip, onClose, onNavigate }) => {
+export const TutorialOverlay: React.FC<TutorialOverlayProps> = ({ mode, steps, onStart, onStartFeature, onSkip, onClose, onNavigate }) => {
   const [index, setIndex] = useState(0);
   const [rect, setRect] = useState<Rect | null>(null);
   const [missing, setMissing] = useState(false);
@@ -91,6 +92,14 @@ export const TutorialOverlay: React.FC<TutorialOverlayProps> = ({ mode, steps, o
       <div className="sw-tour-actions">
         <button className="sw-tour-secondary" onClick={onSkip}>Skip for now</button>
         <button className="sw-tour-primary" onClick={onStart}>Start tutorial <ChevronRight size={17}/></button>
+      </div>
+      <div className="sw-tour-quick-start">
+        <span>Or jump straight to a feature</span>
+        <div>
+          {['Products', 'Inventory', 'Sales / POS', 'Customers', 'Reports', 'Settings'].map((feature) => (
+            <button key={feature} type="button" onClick={() => onStartFeature(feature)}>{feature}</button>
+          ))}
+        </div>
       </div>
     </section>
   </div>;

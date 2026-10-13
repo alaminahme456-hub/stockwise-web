@@ -263,6 +263,7 @@ export interface CartItem {
 export type NavigationTab = 
   | 'dashboard'
   | 'products'
+  | 'product-templates'
   | 'inventory'
   | 'pos'
   | 'customers'

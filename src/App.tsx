@@ -90,6 +90,28 @@ const MainAppLayout: React.FC = () => {
   const [currentTab, setCurrentTab] = useState<NavigationTab>('dashboard');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [selectedCustomerIdForProfile, setSelectedCustomerIdForProfile] = useState<string | null>(null);
+  // Cashier landing tab optimization (Principle 17: Staff UX)
+  React.useEffect(() => {
+    if (currentMember && (currentMember.role === 'cashier' || currentMember.role === 'sales_staff')) {
+      if (!hasPermission('dashboard.view')) {
+        setCurrentTab('pos');
+      }
+    }
+  }, [currentMember, hasPermission]);
+
+  // Dedicated download route state (/download or /download/android)
+  const [isDownloadRoute, setIsDownloadRoute] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      return window.location.pathname.startsWith('/download');
+    }
+    return false;
+  });
+
+  // Global invitation token state (from URL search, hash, pathname or in-app testing)
+  const [activeInviteToken, setActiveInviteToken] = useState<string | null>(() => {
+    return extractInviteTokenFromLocation();
+  });
+
   const [tutorialMode, setTutorialMode] = useState<'welcome' | 'tour' | null>(null);
   const tutorialStorageKey = user && currentStore ? `stockwise:tutorial:v1:${user.id}:${currentStore.id}` : null;
 
@@ -134,27 +156,7 @@ const MainAppLayout: React.FC = () => {
     setTutorialMode('welcome');
   }
 
-  // Cashier landing tab optimization (Principle 17: Staff UX)
-  React.useEffect(() => {
-    if (currentMember && (currentMember.role === 'cashier' || currentMember.role === 'sales_staff')) {
-      if (!hasPermission('dashboard.view')) {
-        setCurrentTab('pos');
-      }
-    }
-  }, [currentMember, hasPermission]);
 
-  // Dedicated download route state (/download or /download/android)
-  const [isDownloadRoute, setIsDownloadRoute] = useState<boolean>(() => {
-    if (typeof window !== 'undefined') {
-      return window.location.pathname.startsWith('/download');
-    }
-    return false;
-  });
-
-  // Global invitation token state (from URL search, hash, pathname or in-app testing)
-  const [activeInviteToken, setActiveInviteToken] = useState<string | null>(() => {
-    return extractInviteTokenFromLocation();
-  });
 
   // Listen for browser URL / hash changes & Android deep link appUrlOpen events
   React.useEffect(() => {

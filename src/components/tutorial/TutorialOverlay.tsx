@@ -96,7 +96,7 @@ export const TutorialOverlay: React.FC<TutorialOverlayProps> = ({ mode, steps, o
       <div className="sw-tour-quick-start">
         <span>Or jump straight to a feature</span>
         <div>
-          {['Products', 'Inventory', 'Sales / POS', 'Customers', 'Reports', 'Settings'].map((feature) => (
+          {['Products', 'Inventory', 'Sales / POS', 'Customers', 'Reports', 'Settings'].filter((feature) => steps.some((step) => step.feature === feature)).map((feature) => (
             <button key={feature} type="button" onClick={() => onStartFeature(feature)}>{feature}</button>
           ))}
         </div>

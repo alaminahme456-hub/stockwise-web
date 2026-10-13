@@ -1,0 +1,30 @@
+.sw-tour-backdrop,.sw-tour-layer{position:fixed;inset:0;z-index:10000;font-family:inherit}
+.sw-tour-backdrop{display:flex;align-items:center;justify-content:center;padding:16px;background:rgba(15,23,42,.68);backdrop-filter:blur(3px)}
+.sw-tour-layer{pointer-events:none}
+.sw-tour-shade{position:absolute;inset:0;background:rgba(15,23,42,.68);pointer-events:auto}
+.sw-tour-spotlight{position:fixed;z-index:10001;border:2px solid #60a5fa;border-radius:14px;box-shadow:0 0 0 9999px rgba(15,23,42,.68),0 0 0 5px rgba(96,165,250,.2);pointer-events:none;transition:top .2s ease,left .2s ease,width .2s ease,height .2s ease}
+.sw-tour-card{position:relative;width:min(100%,420px);padding:26px 24px 22px;background:#fff;color:#0f172a;border:1px solid #e2e8f0;border-radius:22px;box-shadow:0 24px 70px rgba(2,6,23,.3);pointer-events:auto}
+.sw-tour-step-card{position:fixed;z-index:10002;width:min(320px,calc(100vw - 24px));max-height:calc(100dvh - 24px);overflow:auto;padding:22px 20px 18px}
+.sw-tour-close{position:absolute;right:12px;top:12px;width:44px;height:44px;display:flex;align-items:center;justify-content:center;border:0;border-radius:12px;background:transparent;color:#64748b;cursor:pointer}
+.sw-tour-close:hover{background:#f1f5f9;color:#0f172a}
+.sw-tour-icon{width:54px;height:54px;display:flex;align-items:center;justify-content:center;border-radius:17px;background:#eff6ff;color:#2563eb;margin-bottom:16px}
+.sw-tour-eyebrow{font-size:11px;font-weight:800;letter-spacing:.12em;color:#2563eb;margin:0 0 7px}
+.sw-tour-card h2{font-size:21px;line-height:1.25;font-weight:800;letter-spacing:-.025em;margin:12px 44px 9px 0}
+.sw-tour-welcome h2{font-size:25px;margin-top:0}
+.sw-tour-card p{font-size:13px;line-height:1.65;color:#475569;margin:0 0 20px}
+.sw-tour-progress{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0 42px 10px 0;color:#2563eb;font-size:11px;font-weight:800}
+.sw-tour-progress span:last-child{color:#64748b;white-space:nowrap}
+.sw-tour-progress-track{height:4px;background:#e2e8f0;border-radius:99px;overflow:hidden;margin-bottom:17px}
+.sw-tour-progress-track span{display:block;height:100%;background:#2563eb;border-radius:99px;transition:width .2s ease}
+.sw-tour-actions,.sw-tour-nav{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.sw-tour-nav{justify-content:flex-end}
+.sw-tour-primary,.sw-tour-secondary,.sw-tour-icon-button{min-height:44px;border-radius:12px;display:inline-flex;align-items:center;justify-content:center;gap:7px;padding:0 14px;font-size:12px;font-weight:750;cursor:pointer;transition:background .15s ease}
+.sw-tour-primary{background:#2563eb;color:#fff;border:1px solid #2563eb}
+.sw-tour-primary:hover{background:#1d4ed8}
+.sw-tour-secondary{background:#fff;color:#475569;border:1px solid #e2e8f0}
+.sw-tour-secondary:hover{background:#f8fafc}
+.sw-tour-icon-button{width:44px;padding:0;background:#fff;color:#334155;border:1px solid #e2e8f0}
+.sw-tour-icon-button:disabled{opacity:.35;cursor:not-allowed}
+.sw-tour-full{width:100%}
+@media(max-width:480px){.sw-tour-card{padding:24px 20px 20px}.sw-tour-step-card{left:12px!important;right:12px!important;width:auto;max-height:45dvh;padding:18px 16px 14px}.sw-tour-step-card h2{font-size:19px}.sw-tour-step-card p{font-size:12px;margin-bottom:14px}.sw-tour-step-card .sw-tour-close{top:7px;right:7px}.sw-tour-step-card .sw-tour-progress{margin-right:38px}}
+@media(prefers-reduced-motion:reduce){.sw-tour-spotlight,.sw-tour-progress-track span{transition:none}}

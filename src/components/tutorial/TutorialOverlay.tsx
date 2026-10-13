@@ -73,7 +73,7 @@ export const TutorialOverlay: React.FC<TutorialOverlayProps> = ({ mode, steps, o
   const advance = (direction: number) => {
     const next = index + direction;
     if (next < 0) return;
-    if (next >= steps.length) { onClose(true); return; }
+    if (next >= steps.length) { setRect(null); setIndex(steps.length); return; }
     setIndex(next);
   };
 

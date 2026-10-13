@@ -108,7 +108,7 @@ export const TutorialOverlay: React.FC<TutorialOverlayProps> = ({ mode, steps, o
   } : { top: '50%', left: '50%', transform: 'translate(-50%, -50%)' };
 
   return <div className="sw-tour-layer" role="presentation">
-    <div className="sw-tour-shade" style={rect ? { clipPath: `polygon(0 0, 100% 0, 100% 100%, 0 100%, 0 0, ${rect.left}px ${rect.top}px, ${rect.left}px ${rect.top + rect.height}px, ${rect.left + rect.width}px ${rect.top + rect.height}px, ${rect.left + rect.width}px ${rect.top}px, ${rect.left}px ${rect.top}px)` } : undefined} />
+    <div className="sw-tour-shade" />
     {rect && <div className="sw-tour-spotlight" aria-hidden="true" style={{ top: rect.top - 5, left: rect.left - 5, width: rect.width + 10, height: rect.height + 10 }} />}
     <section className="sw-tour-card sw-tour-step-card" style={cardStyle} role="dialog" aria-modal="true" aria-labelledby="sw-tour-step-title">
       <button className="sw-tour-close" aria-label="Close tutorial" onClick={() => onClose(false)}><X size={20}/></button>

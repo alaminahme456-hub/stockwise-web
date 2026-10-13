@@ -113,6 +113,7 @@ const MainAppLayout: React.FC = () => {
   });
 
   const [tutorialMode, setTutorialMode] = useState<'welcome' | 'tour' | null>(null);
+  const [tutorialFeature, setTutorialFeature] = useState<string | null>(null);
   const tutorialStorageKey = user && currentStore ? `stockwise:tutorial:v1:${user.id}:${currentStore.id}` : null;
 
   // Offer onboarding only after auth, store membership, and the active store have loaded.
@@ -125,7 +126,7 @@ const MainAppLayout: React.FC = () => {
     }
   }, [authLoading, storeLoading, user?.id, currentStore?.id, activeInviteToken, isDownloadRoute, tutorialStorageKey]);
 
-  const permittedTutorialSteps = tutorialSteps.filter((step) => step.tab && isTutorialTabPermitted(step.tab));
+  const permittedTutorialSteps = tutorialSteps.filter((step) => step.tab && isTutorialTabPermitted(step.tab) && (!tutorialFeature || step.feature === tutorialFeature));
 
   function isTutorialTabPermitted(tab: NavigationTab): boolean {
     if (isStoreOwner) return true;
@@ -153,7 +154,13 @@ const MainAppLayout: React.FC = () => {
   };
 
   const restartTutorial = () => {
+    setTutorialFeature(null);
     setTutorialMode('welcome');
+  }
+
+  const startFeatureTutorial = (feature: string) => {
+    setTutorialFeature(feature);
+    setTutorialMode('tour');
   }
 
 
@@ -615,7 +622,8 @@ const MainAppLayout: React.FC = () => {
         <TutorialOverlay
           mode={tutorialMode}
           steps={permittedTutorialSteps}
-          onStart={() => setTutorialMode('tour')}
+          onStart={() => { setTutorialFeature(null); setTutorialMode('tour'); }}
+          onStartFeature={startFeatureTutorial}
           onSkip={() => finishTutorial(false)}
           onClose={finishTutorial}
           onNavigate={(tab) => setCurrentTab(tab)}

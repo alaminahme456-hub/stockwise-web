@@ -1,7 +1,7 @@
 .sw-tour-backdrop,.sw-tour-layer{position:fixed;inset:0;z-index:10000;font-family:inherit}
 .sw-tour-backdrop{display:flex;align-items:center;justify-content:center;padding:16px;background:rgba(15,23,42,.68);backdrop-filter:blur(3px)}
 .sw-tour-layer{pointer-events:none}
-.sw-tour-shade{position:absolute;inset:0;background:rgba(15,23,42,.68);pointer-events:auto}
+.sw-tour-shade{position:absolute;inset:0;background:transparent;pointer-events:auto}
 .sw-tour-spotlight{position:fixed;z-index:10001;border:2px solid #60a5fa;border-radius:14px;box-shadow:0 0 0 9999px rgba(15,23,42,.68),0 0 0 5px rgba(96,165,250,.2);pointer-events:none;transition:top .2s ease,left .2s ease,width .2s ease,height .2s ease}
 .sw-tour-card{position:relative;width:min(100%,420px);padding:26px 24px 22px;background:#fff;color:#0f172a;border:1px solid #e2e8f0;border-radius:22px;box-shadow:0 24px 70px rgba(2,6,23,.3);pointer-events:auto}
 .sw-tour-step-card{position:fixed;z-index:10002;width:min(320px,calc(100vw - 24px));max-height:calc(100dvh - 24px);overflow:auto;padding:22px 20px 18px}

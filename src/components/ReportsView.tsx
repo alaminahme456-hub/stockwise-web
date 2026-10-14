@@ -50,8 +50,16 @@ export const ReportsView: React.FC = () => {
       cutoff = new Date(0); // All time
     }
 
-    const s = sales.filter((item) => new Date(item.created_at) >= cutoff);
-    const e = expenses.filter((item) => new Date(item.expense_date || item.date || item.created_at) >= cutoff);
+    // Revenue includes only completed sales inside the selected window.
+    // The upper bound prevents future-dated records from inflating totals.
+    const s = sales.filter((item) => {
+      const createdAt = new Date(item.created_at);
+      return item.status === 'completed' && createdAt >= cutoff && createdAt <= now;
+    });
+    const e = expenses.filter((item) => {
+      const expenseAt = new Date(item.expense_date || item.date || item.created_at);
+      return expenseAt >= cutoff && expenseAt <= now;
+    });
 
     return { filteredSales: s, filteredExpenses: e };
   }, [sales, expenses, timeRange]);
@@ -70,12 +78,9 @@ export const ReportsView: React.FC = () => {
         cogs += itemCost * Number(it.quantity || 1);
       });
     });
-    // If items had 0 cost price fallback estimate (approx 60% of sale)
-    if (cogs === 0 && totalRevenue > 0) {
-      cogs = totalRevenue * 0.55;
-    }
+    // Do not invent a cost estimate when cost prices are missing.
     return cogs;
-  }, [filteredSales, totalRevenue]);
+  }, [filteredSales]);
 
   const grossProfit = totalRevenue - totalCOGS;
 
@@ -121,15 +126,20 @@ export const ReportsView: React.FC = () => {
   // Daily revenue trend chart data
   const revenueTrend = useMemo(() => {
     const daysMap: Record<string, number> = {};
-    // Last 7 days bucket
+    const localDayKey = (date: Date) => {
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const day = String(date.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    };
+    // Last 7 days bucket, using the store user's local calendar day.
     for (let i = 6; i >= 0; i--) {
       const d = new Date();
       d.setDate(d.getDate() - i);
-      const key = d.toISOString().split('T')[0];
-      daysMap[key] = 0;
+      daysMap[localDayKey(d)] = 0;
     }
     filteredSales.forEach((s) => {
-      const day = s.created_at.split('T')[0];
+      const day = localDayKey(new Date(s.created_at));
       if (daysMap[day] !== undefined) {
         daysMap[day] += Number(s.total_amount);
       }

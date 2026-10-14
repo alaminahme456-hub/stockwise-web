@@ -40,6 +40,8 @@ export const POSView: React.FC<POSViewProps> = ({ onNavigate }) => {
   const { showToast } = useToast();
 
   const searchInputRef = useRef<HTMLInputElement>(null);
+  // Keep the same key when a checkout request times out so a retry cannot create a duplicate sale.
+  const checkoutKeyRef = useRef<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
 
@@ -143,6 +145,7 @@ export const POSView: React.FC<POSViewProps> = ({ onNavigate }) => {
   };
 
   const clearCart = () => {
+    checkoutKeyRef.current = null;
     setCart([]);
     setDiscountPercent(0);
     setNotes('');
@@ -264,6 +267,7 @@ export const POSView: React.FC<POSViewProps> = ({ onNavigate }) => {
       const finalTendered = isCash ? (tenderedNum || totalAmount) : undefined;
       const finalChange = isCash ? (tenderedNum >= totalAmount ? changeDue : 0) : undefined;
 
+      const checkoutKey = checkoutKeyRef.current || (checkoutKeyRef.current = (typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `checkout-${Date.now()}-${Math.random().toString(36).slice(2)}`));
       const sale = await createSaleWithItems(
         currentStore.id,
         {
@@ -281,6 +285,7 @@ export const POSView: React.FC<POSViewProps> = ({ onNavigate }) => {
           amountPaid: isCredit ? creditUpfrontNum : undefined,
           balanceDue: isCredit ? creditRemainingDebt : undefined,
           dueDate: isCredit && creditDueDate ? creditDueDate : null,
+          checkoutKey,
         },
         cart.map((item) => ({
           productId: item.product.id,

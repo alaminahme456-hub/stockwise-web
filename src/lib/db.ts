@@ -632,6 +632,7 @@ export async function createSaleWithItems(
     amountPaid?: number;
     balanceDue?: number;
     dueDate?: string | null;
+    checkoutKey?: string;
   },
   items: Array<{
     productId: string;
@@ -647,114 +648,51 @@ export async function createSaleWithItems(
   const upfrontPaid = isCredit ? Number(saleData.amountPaid || 0) : undefined;
   const balanceDue = isCredit ? Math.max(0, Number(saleData.totalAmount) - (upfrontPaid || 0)) : undefined;
 
+  const isPersistedStore = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(storeId);
   try {
-    // 1. Deduct stock in Supabase
-    for (const item of items) {
-      const { data: prod, error: prodErr } = await supabase
-        .from('products')
-        .select('current_stock, name')
-        .eq('id', item.productId)
-        .single();
-
-      if (!prodErr && prod) {
-        const currentStock = Number(prod.current_stock) || 0;
-        const newStock = Math.max(0, currentStock - item.quantity);
-
-        await supabase
-          .from('products')
-          .update({
-            current_stock: newStock,
-            updated_at: new Date().toISOString(),
-          })
-          .eq('id', item.productId);
-
-        try {
-          await supabase.from('inventory_movements').insert({
-            store_id: storeId,
-            product_id: item.productId,
-            type: 'sale',
-            quantity: item.quantity,
-            previous_stock: currentStock,
-            new_stock: newStock,
-            reason: `POS Sale: ${item.quantity} ${prod.name}`,
-            performed_by: saleData.staffName || 'Cashier',
-          });
-        } catch {
-          // Ignore if table not created
-        }
-      }
+    if (!isPersistedStore) {
+      throw new Error('This is a local-only store; use local storage checkout.');
     }
 
-    // 2. Insert Sale record in Supabase
-    const { data: sale, error: saleErr } = await supabase
-      .from('sales')
-      .insert({
-        store_id: storeId,
-        customer_id: saleData.customerId || null,
-        customer_name: saleData.customerName || null,
-        subtotal: saleData.subtotal,
-        discount: saleData.discount,
-        tax: saleData.tax,
-        total_amount: saleData.totalAmount,
-        payment_method: saleData.paymentMethod,
-        status: 'completed',
-        staff_name: saleData.staffName || null,
-        notes: saleData.notes || null,
-        amount_paid: upfrontPaid ?? null,
-        balance_due: balanceDue ?? null,
-        due_date: saleData.dueDate || null,
-      })
-      .select()
-      .single();
+    const checkoutKey = saleData.checkoutKey || `checkout-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const { data, error } = await supabase.rpc('complete_pos_sale', {
+      p_store_id: storeId,
+      p_sale: {
+        ...saleData,
+        amountPaid: upfrontPaid ?? null,
+        balanceDue: balanceDue ?? null,
+      },
+      p_items: items.map((item) => ({
+        product_id: item.productId,
+        product_name: item.productName,
+        sku: item.sku,
+        quantity: item.quantity,
+        unit_price: item.unitPrice,
+        cost_price: item.costPrice,
+        subtotal: item.subtotal,
+      })),
+      p_checkout_key: checkoutKey,
+    });
 
-    if (saleErr) throw saleErr;
-
-    // 3. If credit sale with upfront deposit, create initial payment transaction
-    if (isCredit && upfrontPaid && upfrontPaid > 0 && saleData.customerId) {
-      try {
-        await supabase.from('customer_payments').insert({
-          store_id: storeId,
-          customer_id: saleData.customerId,
-          customer_name: saleData.customerName || null,
-          sale_id: sale.id,
-          amount: upfrontPaid,
-          payment_method: 'cash',
-          payment_date: new Date().toISOString(),
-          notes: `Upfront deposit for Credit Sale #${sale.id.slice(0, 8).toUpperCase()}`,
-          reference_id: `DEP-${sale.id.slice(0, 8).toUpperCase()}`,
-          recorded_by: saleData.staffName || 'Cashier',
-        });
-      } catch (payErr) {
-        console.warn('Could not record upfront credit payment in Supabase:', payErr);
-      }
+    if (error) throw error;
+    if (!data?.sale || !Array.isArray(data.items)) {
+      throw new Error('The database returned an incomplete sale record. Refresh transactions before retrying.');
     }
 
-    // 4. Insert Sale Items in Supabase
-    const itemsToInsert = items.map((item) => ({
-      sale_id: sale.id,
-      product_id: item.productId,
-      product_name: item.productName,
-      sku: item.sku,
-      quantity: item.quantity,
-      unit_price: item.unitPrice,
-      cost_price: item.costPrice,
-      subtotal: item.subtotal,
-    }));
-
-    try {
-      await supabase.from('sale_items').insert(itemsToInsert);
-    } catch {
-      // Ignore if table not created
-    }
-
+    const result = data as { sale: Sale; items: NonNullable<Sale['items']> };
     return {
-      ...sale,
+      ...result.sale,
+      items: result.items,
       amount_tendered: saleData.amountTendered,
       change_due: saleData.changeDue,
       amount_paid: upfrontPaid,
       balance_due: balanceDue,
     };
   } catch (err) {
+    if (isPersistedStore) {
+      console.error('Atomic Supabase POS checkout failed; no local duplicate was created:', err);
+      throw err;
+    }
     console.warn('Supabase sale creation fallback to user-isolated storage:', err);
     const { userId, storage } = findStorageForStore(storeId);
 

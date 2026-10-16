@@ -110,11 +110,23 @@ export const TutorialOverlay: React.FC<TutorialOverlayProps> = ({ mode, steps, o
     <button className="sw-tour-primary sw-tour-full" onClick={() => onClose(true)}>Finish tour <CheckCircle2 size={17}/></button>
   </section></div>;
 
-  const cardStyle: React.CSSProperties = rect ? {
-    top: rect.top + rect.height + 14 + 230 > window.innerHeight ? 'auto' : Math.min(window.innerHeight - 260, rect.top + rect.height + 14),
-    bottom: rect.top + rect.height + 14 + 230 > window.innerHeight ? 16 : 'auto',
-    left: Math.max(12, Math.min(rect.left + rect.width / 2 - 160, window.innerWidth - 332)),
-  } : { top: '50%', left: '50%', transform: 'translate(-50%, -50%)' };
+  // Place the tutorial card in the clearest space away from the highlighted target.
+  const cardStyle: React.CSSProperties = rect ? (() => {
+    const mobile = window.innerWidth <= 480;
+    const cardHeight = mobile ? Math.min(window.innerHeight * 0.45, 320) : 260;
+    const gap = 14;
+    const spaceBelow = window.innerHeight - (rect.top + rect.height) - gap;
+    const spaceAbove = rect.top - gap;
+    const placeBelow = spaceBelow >= cardHeight || spaceBelow >= spaceAbove;
+    const top = placeBelow
+      ? Math.max(12, Math.min(window.innerHeight - cardHeight - 12, rect.top + rect.height + gap))
+      : Math.max(12, rect.top - cardHeight - gap);
+    return {
+      top,
+      bottom: 'auto',
+      left: mobile ? 12 : Math.max(12, Math.min(rect.left + rect.width / 2 - 160, window.innerWidth - 332)),
+    };
+  })() : { top: '50%', left: '50%', transform: 'translate(-50%, -50%)' };
 
   return <div className="sw-tour-layer" role="presentation">
     <div className="sw-tour-shade" />

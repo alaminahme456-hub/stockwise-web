@@ -8,6 +8,7 @@ import { Navbar } from './components/Navbar';
 import { Sidebar } from './components/Sidebar';
 import { DashboardView } from './components/DashboardView';
 import { ProductsView } from './components/ProductsView';
+import { ProductTemplatesView } from './components/ProductTemplatesView';
 import { InventoryView } from './components/InventoryView';
 import { POSView } from './components/POSView';
 import { CustomersView } from './components/CustomersView';
@@ -387,6 +388,7 @@ const MainAppLayout: React.FC = () => {
       case 'dashboard':
         return hasPermission('dashboard.view');
       case 'products':
+      case 'product-templates':
         return hasPermission('products.view');
       case 'inventory':
         return hasPermission('products.view') || hasPermission('products.adjust_stock');
@@ -422,8 +424,10 @@ const MainAppLayout: React.FC = () => {
       setCreateStoreError(null);
       try {
         const store = await createStore(user.id, newStoreName.trim(), newStoreCurrency);
+        // Only navigate after the server confirms store creation and the active store is set.
         await refreshStoreData();
         setCurrentStore(store);
+        setCurrentTab('dashboard');
       } catch (err: any) {
         setCreateStoreError(err?.message || 'Could not initialize store.');
       } finally {
@@ -580,7 +584,8 @@ const MainAppLayout: React.FC = () => {
                   }} 
                 />
               )}
-              {currentTab === 'products' && <ProductsView />}
+              {currentTab === 'products' && <ProductsView onOpenTemplates={() => setCurrentTab('product-templates')} />}
+              {currentTab === 'product-templates' && <ProductTemplatesView onBack={() => setCurrentTab('products')} />}
               {currentTab === 'inventory' && <InventoryView />}
               {currentTab === 'pos' && (
                 <POSView onNavigate={(tab) => setCurrentTab(tab as NavigationTab)} />

@@ -2,6 +2,7 @@ import React from 'react';
 import { 
   LayoutDashboard, 
   Package, 
+  LibraryBig,
   Boxes, 
   ShoppingCart, 
   Users, 
@@ -46,6 +47,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       case 'dashboard':
         return hasPermission('dashboard.view');
       case 'products':
+      case 'product-templates':
         return hasPermission('products.view');
       case 'inventory':
         return hasPermission('products.view') || hasPermission('products.adjust_stock');
@@ -83,6 +85,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const allNavItems: SidebarNavItem[] = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'products', label: 'Products', icon: Package },
+    { id: 'product-templates', label: 'Product Templates', icon: LibraryBig },
     { 
       id: 'inventory', 
       label: 'Inventory', 

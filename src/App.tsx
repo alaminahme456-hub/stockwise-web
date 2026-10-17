@@ -424,10 +424,11 @@ const MainAppLayout: React.FC = () => {
       setCreateStoreError(null);
       try {
         const store = await createStore(user.id, newStoreName.trim(), newStoreCurrency);
-        // Only navigate after the server confirms store creation and the active store is set.
-        await refreshStoreData();
+        // The createStore call resolves only after successful server creation.
+        // Activate the new store and navigate to the dashboard immediately on success.
         setCurrentStore(store);
         setCurrentTab('dashboard');
+        await refreshStoreData();
       } catch (err: any) {
         setCreateStoreError(err?.message || 'Could not initialize store.');
       } finally {

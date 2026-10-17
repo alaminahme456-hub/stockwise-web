@@ -136,6 +136,15 @@ export const AuthModal: React.FC = () => {
             </div>
           )}
 
+          {mode === 'register' && (
+            <div className="mb-4 p-4 rounded-lg bg-blue-500/10 border border-blue-500/30 text-blue-100 text-sm" role="note" aria-label="Store creation help">
+              <h3 className="font-semibold text-blue-300 mb-1">Already registered but still seeing Create Store?</h3>
+              <p className="text-slate-300">If you've successfully registered and created your store but still see the "Create Store" screen, don't worry!</p>
+              <p className="text-slate-300 mt-2">Your store may already have been created successfully. Simply refresh the website and log in again if necessary.</p>
+              <p className="text-slate-300 mt-2">If the problem persists, please contact support.</p>
+            </div>
+          )}
+
           {mode === 'setup' ? (
             <form onSubmit={handleSaveConfig} className="space-y-4">
               <div className="mb-3">
